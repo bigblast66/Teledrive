@@ -94,3 +94,11 @@ pub fn plaintext_size(encrypted_size: u64, block_size: u64) -> u64 {
 pub fn encrypt_canary(key: &[u8; 32], nonce_prefix: &[u8; 4], plaintext: &[u8]) -> Vec<u8> {
     encrypt_block(key, nonce_prefix, 0, plaintext)
 }
+
+pub fn generate_thumbnail(input_path: &str) -> Option<Vec<u8>> {
+    let img = image::open(input_path).ok()?;
+    let thumb = img.resize(200, 200, image::imageops::FilterType::Triangle);
+    let mut buf = Vec::new();
+    thumb.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg).ok()?;
+    Some(buf)
+}

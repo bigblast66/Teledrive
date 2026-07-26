@@ -71,6 +71,52 @@ async fn prune_preview_cache(cache_dir: std::path::PathBuf, preserve_path: Optio
     }).await;
 }
 
+const THUMBNAIL_CACHE_MAX_FILES: usize = 500;
+const THUMBNAIL_CACHE_MAX_TOTAL_BYTES: u64 = 50 * 1024 * 1024; // 50MB — thumbnails are tiny, generous cap
+
+async fn prune_thumbnail_cache(cache_dir: std::path::PathBuf) {
+    let _ = tokio::task::spawn_blocking(move || {
+        // Clean up any orphaned .part/.enc files left by interrupted requests
+        let mut read_dir = match std::fs::read_dir(&cache_dir) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+        for entry in read_dir.by_ref().flatten() {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if fname.contains(".part") || fname.contains(".enc") {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+
+        let read_dir = match std::fs::read_dir(&cache_dir) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+        let mut files: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            if let Ok(meta) = entry.metadata() {
+                let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                files.push((path, modified, meta.len()));
+            }
+        }
+        files.sort_by_key(|(_, modified, _)| *modified);
+        let mut total_bytes: u64 = files.iter().map(|(_, _, len)| *len).sum();
+        while files.len() > THUMBNAIL_CACHE_MAX_FILES || total_bytes > THUMBNAIL_CACHE_MAX_TOTAL_BYTES {
+            if let Some((path, _, len)) = files.first().cloned() {
+                let _ = std::fs::remove_file(&path);
+                total_bytes = total_bytes.saturating_sub(len);
+                files.remove(0);
+            } else {
+                break;
+            }
+        }
+    }).await;
+}
+
 /// Download media to a file using `iter_download` with manual chunk writing.
 /// Returns the number of bytes written.
 ///
@@ -441,130 +487,78 @@ pub async fn cmd_get_thumbnail(
     let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
 
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
-    let messages = client.get_messages_by_id(&peer, &[message_id])
+
+    // Fetch the companion thumbnail message (always sent immediately after the real file)
+    let thumb_msg_id = message_id + 1;
+    let thumb_messages = client.get_messages_by_id(&peer, &[thumb_msg_id])
         .await.map_err(|e| e.to_string())?;
-    if let Some(m) = messages.into_iter().flatten().next() {
-        if let Some(media) = m.media() {
-            // Only get thumbnails for photos and documents with photo thumbnails
-            let (is_image, ext) = match &media {
-                Media::Photo(_) => (true, "jpg".to_string()),
-                Media::Document(d) => {
-                    let mime = d.mime_type().unwrap_or("");
-                    if mime.starts_with("image/") {
-                        let e = match mime {
-                            "image/png" => "png",
-                            "image/gif" => "gif",
-                            "image/webp" => "webp",
-                            _ => "jpg",
-                        };
-                        (true, e.to_string())
-                    } else {
-                        // Not an image, return empty - FileCard will show icon
-                        return Ok("".to_string());
-                    }
-                },
-                _ => return Ok("".to_string()),
-            };
 
-            if is_image {
-                // Get photo thumbnail (largest available for best quality)
-                let save_path = cache_dir.join(format!("{}_{}.{}", folder_key, message_id, ext));
+    let media = match thumb_messages.into_iter().flatten().next().and_then(|m| m.media()) {
+        Some(m) => m,
+        None => return Ok("".to_string()),
+    };
 
-                let thumbs = match &media {
-                    Media::Photo(p) => p.thumbs(),
-                    Media::Document(d) => d.thumbs(),
-                    _ => vec![],
-                };
+    let save_path = cache_dir.join(format!("{}_{}.jpg", folder_key, message_id));
 
-                // Download to a temporary .part file to avoid race conditions
-                // with concurrent thumbnail requests for the same file.
-                //
-                // Use a random u64 suffix so concurrent requests for the
-                // same file write to separate .part files — preventing the inter-request
-                // delete/write race that previously produced empty files.
-                let unique_id = rand::rng().random::<u64>();
-                let part_path = save_path.with_extension(format!("{}_{}.part", ext, unique_id));
+    // Early-exit: another concurrent request may have already cached this
+    if tokio::fs::metadata(&save_path).await.map_or(false, |m| m.len() > 0) {
+        if let Ok(bytes) = tokio::fs::read(&save_path).await {
+            let b64 = general_purpose::STANDARD.encode(&bytes);
+            return Ok(format!("data:image/jpeg;base64,{}", b64));
+        }
+    }
 
-                let mut download_ok = false;
+    let unique_id = rand::rng().random::<u64>();
+    let part_path = save_path.with_extension(format!("jpg_{}.part", unique_id));
+    let enc_path = save_path.with_extension(format!("jpg_{}.enc", unique_id));
 
-                // Early-exit: another concurrent request may have already completed
-                // the download and renamed its .part file to the final path.
-                if tokio::fs::metadata(&save_path).await.map_or(false, |m| m.len() > 0) {
-                    download_ok = true;
-                }
+    // Attempt 1: download with the reference we already have
+    let mut download_ok = download_to_file(&client, &media, &enc_path).await.is_ok();
 
-                // Attempt 1: download with original media/thumbs (may have stale file reference)
-                if !download_ok {
-                    let _ = tokio::fs::remove_file(&part_path).await;
-                    let ok = if let Some(thumb) = thumbs.iter().filter(|t| t.size() > 0).max_by_key(|t| t.size()) {
-                        download_to_file(&client, thumb, &part_path).await.is_ok()
-                    } else {
-                        download_to_file(&client, &media, &part_path).await.is_ok()
-                    };
-                    if ok {
-                        download_ok = true;
-                    }
-                }
-
-                // Attempt 2: re-fetch the message to get fresh file references, then retry
-                if !download_ok {
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    if let Ok(fresh_messages) = client.get_messages_by_id(&peer, &[message_id]).await {
-                        if let Some(fresh_msg) = fresh_messages.into_iter().flatten().next() {
-                            if let Some(fresh_media) = fresh_msg.media() {
-                                let fresh_thumbs = match &fresh_media {
-                                    Media::Photo(p) => p.thumbs(),
-                                    Media::Document(d) => d.thumbs(),
-                                    _ => vec![],
-                                };
-                                let _ = tokio::fs::remove_file(&part_path).await;
-                                let ok = if let Some(fresh_thumb) = fresh_thumbs.iter().filter(|t| t.size() > 0).max_by_key(|t| t.size()) {
-                                    download_to_file(&client, fresh_thumb, &part_path).await.is_ok()
-                                } else {
-                                    download_to_file(&client, &fresh_media, &part_path).await.is_ok()
-                                };
-                                if ok {
-                                    download_ok = true;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if download_ok {
-                    // Atomically rename part file to final path
-                    match tokio::fs::rename(&part_path, &save_path).await {
-                        Ok(_) => {
-                            if let Ok(bytes) = tokio::fs::read(&save_path).await {
-                                let mime = match ext.as_str() {
-                                    "png" => "image/png",
-                                    "gif" => "image/gif",
-                                    "webp" => "image/webp",
-                                    _ => "image/jpeg",
-                                };
-                                let b64 = general_purpose::STANDARD.encode(&bytes);
-                                return Ok(format!("data:{};base64,{}", mime, b64));
-                            }
-                        },
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                            // Another concurrent request already renamed our part file.
-                            if let Ok(bytes) = tokio::fs::read(&save_path).await {
-                                let mime = match ext.as_str() {
-                                    "png" => "image/png",
-                                    "gif" => "image/gif",
-                                    "webp" => "image/webp",
-                                    _ => "image/jpeg",
-                                };
-                                let b64 = general_purpose::STANDARD.encode(&bytes);
-                                return Ok(format!("data:{};base64,{}", mime, b64));
-                            }
-                        },
-                        Err(_) => {
-                            let _ = tokio::fs::remove_file(&part_path).await;
-                        }
-                    }
-                }
+    // Attempt 2: file reference may have expired — re-fetch the message for a fresh one
+    if !download_ok {
+        let _ = tokio::fs::remove_file(&enc_path).await;
+        if let Ok(fresh_messages) = client.get_messages_by_id(&peer, &[thumb_msg_id]).await {
+            if let Some(fresh_media) = fresh_messages.into_iter().flatten().next().and_then(|m| m.media()) {
+                download_ok = download_to_file(&client, &fresh_media, &enc_path).await.is_ok();
             }
+        }
+    }
+
+    if !download_ok {
+        let _ = tokio::fs::remove_file(&enc_path).await;
+        return Ok("".to_string());
+    }
+
+    crate::crypto::decrypt_file(
+        enc_path.to_str().unwrap(),
+        part_path.to_str().unwrap(),
+        &crate::crypto::dev_key(),
+    );
+    let _ = tokio::fs::remove_file(&enc_path).await;
+
+    // Atomically rename part file to final path (Ok = we won the race,
+    // NotFound = a concurrent request already renamed theirs — either way, read save_path)
+    match tokio::fs::rename(&part_path, &save_path).await {
+        Ok(_) | Err(_) => {
+            if let Ok(bytes) = tokio::fs::read(&save_path).await {
+                let b64 = general_purpose::STANDARD.encode(&bytes);
+                let _ = tokio::fs::remove_file(&part_path).await;
+                return Ok(format!("data:image/jpeg;base64,{}", b64));
+            }
+            let _ = tokio::fs::remove_file(&part_path).await;
+        }
+    }
+
+    match tokio::fs::rename(&part_path, &save_path).await {
+        Ok(_) | Err(_) => {
+            if let Ok(bytes) = tokio::fs::read(&save_path).await {
+                let b64 = general_purpose::STANDARD.encode(&bytes);
+                let _ = tokio::fs::remove_file(&part_path).await;
+                prune_thumbnail_cache(cache_dir.clone()).await; // NEW
+                return Ok(format!("data:image/jpeg;base64,{}", b64));
+            }
+            let _ = tokio::fs::remove_file(&part_path).await;
         }
     }
 

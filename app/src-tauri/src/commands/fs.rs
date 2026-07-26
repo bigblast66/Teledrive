@@ -16,6 +16,8 @@ use std::sync::OnceLock;
 use std::sync::Mutex;
 use tokio::sync::oneshot;
 
+const THUMB_MSG_MARKER: &str = "TGDRIVE_THUMB_V1";
+
 static UPLOAD_CANCELLATIONS: OnceLock<Mutex<HashMap<String, oneshot::Sender<()>>>> = OnceLock::new();
 
 fn get_upload_cancellations() -> &'static Mutex<HashMap<String, oneshot::Sender<()>>> {
@@ -803,6 +805,7 @@ async fn cmd_upload_file_inner(
     .file_name()
     .map(|n| n.to_string_lossy().to_string())
     .unwrap_or_else(|| "file".to_string());
+    let original_path = path.clone();
     // --- encryption hook ---
     let encrypted_path = format!("{}.enc", path);
     crate::crypto::encrypt_file(&path, &encrypted_path, &crate::crypto::dev_key());
@@ -939,6 +942,30 @@ async fn cmd_upload_file_inner(
         }
         //deletet temp encrypted file
         let _ = tokio::fs::remove_file(&path).await;
+
+         // --- thumbnail hook: only for images ---
+        let ext = std::path::Path::new(&original_path)
+            .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        if ["jpg", "jpeg", "png", "webp"].contains(&ext.as_str()) {
+            if let Some(thumb_bytes) = crate::crypto::generate_thumbnail(&original_path) {
+                let raw_thumb_path = format!("{}.thumb.raw", original_path);
+                let enc_thumb_path = format!("{}.thumb.enc", original_path);
+                let _ = tokio::fs::write(&raw_thumb_path, &thumb_bytes).await;
+                crate::crypto::encrypt_file(&raw_thumb_path, &enc_thumb_path, &crate::crypto::dev_key());
+                let _ = tokio::fs::remove_file(&raw_thumb_path).await;
+                if let Ok(encrypted_thumb) = tokio::fs::read(&enc_thumb_path).await {
+                    let mut thumb_reader = std::io::Cursor::new(&encrypted_thumb);
+                    if let Ok(uploaded_thumb) = client.upload_stream(&mut thumb_reader, encrypted_thumb.len(), "thumb.enc".to_string()).await {
+                        let thumb_msg = InputMessage::new().text(THUMB_MSG_MARKER).file(uploaded_thumb);
+                        let _ = client.send_message(&peer, thumb_msg).await;
+                    }
+                }
+                let _ = tokio::fs::remove_file(&enc_thumb_path).await;
+            }
+        }
+        // --- end hook ---
+
+
         return Ok("File uploaded successfully".to_string());
             }
             Err(e) => {
@@ -1470,7 +1497,9 @@ pub async fn cmd_get_files(
             }
         }
         last_msg_id = Some(current_msg_id);
-
+        if msg.text() == THUMB_MSG_MARKER {
+            continue;
+        }
         if let Some(doc) = msg.media() {
             let (name, size, mime, ext) = match doc {
                 Media::Document(d) => {
