@@ -300,6 +300,15 @@ pub async fn cmd_get_preview(
                 }
             };
             if file_ready {
+                // --- decryption hook ---
+                let decrypted_path = save_path.with_extension(format!("{}.dec", ext));
+                crate::crypto::decrypt_file(
+                    save_path.to_str().unwrap(),
+                    decrypted_path.to_str().unwrap(),
+                    &crate::crypto::dev_key(),
+                );
+                tokio::fs::rename(&decrypted_path, &save_path).await.map_err(|e| e.to_string())?;
+                // --- end hook ---
                 let lower_ext = ext.to_lowercase();
                 if ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].contains(&lower_ext.as_str()) {
                     log::info!("Converting file to Base64...");
