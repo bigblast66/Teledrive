@@ -36,6 +36,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
     const [openingExternal, setOpeningExternal] = useState<boolean>(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
+    const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number }[]>([]);
 
     const handleOpenExternally = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -74,6 +75,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
         setError(null);
         setPdf(null);
         setNumPages(0);
+        setPageDimensions([]);
 
         if (isAndroidPlatform) {
             let activeLoadingTask: any = null;
@@ -93,7 +95,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                     });
                     activeLoadingTask = loadingTask;
                     loadingTask.promise.then(
-                        (pdfDoc) => {
+                        async (pdfDoc) => {
                             if (cancelled) {
                                 pdfDoc.destroy();
                                 return;
@@ -102,6 +104,14 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                                 pdfRef.current.destroy();
                             }
                             pdfRef.current = pdfDoc;
+                            const dims: { width: number; height: number }[] = [];
+                            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                                const p = await pdfDoc.getPage(i);
+                                const vp = p.getViewport({ scale: 1 });
+                                dims.push({ width: vp.width, height: vp.height });
+                            }
+                            if (cancelled) return;
+                            setPageDimensions(dims);
                             setPdf(pdfDoc);
                             setNumPages(pdfDoc.numPages);
                             setLoading(false);
@@ -152,7 +162,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
         const loadingTask = pdfjsLib.getDocument(streamUrl);
 
         loadingTask.promise.then(
-             (pdfDoc) => {
+             async (pdfDoc) => {
                  if (cancelled) {
                      pdfDoc.destroy();
                      return;
@@ -162,6 +172,14 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                      pdfRef.current.destroy();
                  }
                  pdfRef.current = pdfDoc;
+                 const dims: { width: number; height: number }[] = [];
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const p = await pdfDoc.getPage(i);
+                    const vp = p.getViewport({ scale: 1 });
+                    dims.push({ width: vp.width, height: vp.height });
+                }
+                if (cancelled) return;
+                setPageDimensions(dims);
                  setPdf(pdfDoc);
                  setNumPages(pdfDoc.numPages);
                  setLoading(false);
@@ -342,6 +360,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                                 pageNumber={index + 1}
                                 pdf={pdf}
                                 scale={scale}
+                                baseDimensions={pageDimensions[index]}  
                             />
                         ))}
                     </div>
@@ -360,7 +379,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
 }
 
 // Individual Page Component — lazy-loaded via IntersectionObserver
-function PdfPage({ pageNumber, pdf, scale }: { pageNumber: number; pdf: pdfjsLib.PDFDocumentProxy; scale: number }) {
+function PdfPage({ pageNumber, pdf, scale,baseDimensions }: { pageNumber: number; pdf: pdfjsLib.PDFDocumentProxy; scale: number; baseDimensions?: { width: number; height: number }; }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const renderTaskRef = useRef<ReturnType<pdfjsLib.PDFPageProxy['render']> | null>(null);
     const [isVisible, setIsVisible] = useState(false);
@@ -453,8 +472,9 @@ function PdfPage({ pageNumber, pdf, scale }: { pageNumber: number; pdf: pdfjsLib
     }, [page, scale, isVisible, pageNumber]);
 
     // Estimated dimensions for the placeholder before page loads (US Letter @ 96 DPI)
-    const estimatedHeight = 1056 * scale;
-    const estimatedWidth = 816 * scale;
+    
+    const estimatedHeight = (baseDimensions?.height ?? 1056) * scale;
+    const estimatedWidth = (baseDimensions?.width ?? 816) * scale;  
 
     return (
         <div
