@@ -14,6 +14,7 @@ interface FileCardProps {
     onDelete: () => void;
     onDownload: () => void;
     onPreview?: () => void;
+    onOpen: (file: TelegramFile) => void;
     onShare?: () => void;
     isSelected: boolean;
     onClick?: (e: React.MouseEvent) => void;
@@ -34,11 +35,20 @@ function isImageFile(filename: string): boolean {
 }
 
 
-export function FileCard({ file, onDelete, onDownload, onPreview, onShare, isSelected, onClick, onContextMenu, onDrop, onDragStart, onDragEnd, activeFolderId, height, onToggleSelection, selectedIds }: FileCardProps) {
+export function FileCard({ file, onDelete, onDownload, onPreview, onOpen, onShare, isSelected, onClick, onContextMenu, onDrop, onDragStart, onDragEnd, activeFolderId, height, onToggleSelection, selectedIds }: FileCardProps) {
     const isFolder = file.type === 'folder';
     const [isDragOver, setIsDragOver] = useState(false);
     const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [thumbnailLoading, setThumbnailLoading] = useState(false);
+
+    const handleCardClick = (e: React.MouseEvent) => {
+        const hasActiveSelection = selectedIds && selectedIds.length > 0;
+        if (e.shiftKey || e.metaKey || e.ctrlKey || hasActiveSelection) {
+            if (onClick) onClick(e);
+        } else {
+            onOpen(file);
+        }
+    };
 
     // Lazy video metadata badge (.mp4 only)
     const { data: videoMeta, isLoading: videoMetaLoading } = useVideoMetadata(
@@ -83,7 +93,7 @@ export function FileCard({ file, onDelete, onDownload, onPreview, onShare, isSel
             className="relative"
             draggable={!isFolder}
             onContextMenu={onContextMenu}
-            onClick={onClick}
+            onClick={handleCardClick}
             onDragStart={!isFolder ? (e: any) => {
                 const idsToDrag = selectedIds && selectedIds.includes(file.id) ? selectedIds : [file.id];
                 if (onDragStart) onDragStart(idsToDrag);

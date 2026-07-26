@@ -3,30 +3,64 @@
 /* stylelint-disable at-rule-no-unknown */
 /* Dark Theme (Default) - Using Tailwind v4 @theme directive */
 @theme {
-  --color-telegram-bg: #0e1621;
-  --color-telegram-surface: #17212b;
-  --color-telegram-primary: #ffae00;
-  --color-telegram-secondary: #2481cc;
-  --color-telegram-text: #ffffff;
-  --color-telegram-subtext: #8e9fb3;
-  --color-telegram-border: rgba(255, 255, 255, 0.1);
-  --color-telegram-hover: rgba(255, 255, 255, 0.05);
-  --color-telegram-glass-bg: #17212b;
-  --color-telegram-glass-border: #ffffff;
+  /* DARK MODE: Premium OLED-style Charcoal */
+  --color-telegram-bg: #111318;             /* Ultra-deep charcoal, not purely black */
+  --color-telegram-surface: #1a1d24;        /* Slightly elevated, rich dark surface */
+  --color-telegram-surface-elevated: #232730;
+
+  /* Accents: Vibrant but controlled */
+  --color-telegram-primary: #f5a524;        /* Crisp, premium gold/amber */
+  --color-telegram-primary-hover: #d9901c;
+  --color-telegram-on-primary: #000000;     /* Pure black text for perfect readability on gold */
+  
+  --color-telegram-secondary: #006fee;      /* Modern, high-tech UI blue */
+  --color-telegram-secondary-hover: #005bc4;
+  --color-telegram-on-secondary: #ffffff;
+
+  /* Typography: High-end monochrome */
+  --color-telegram-text: #ecedee;           /* Sharp off-white */
+  --color-telegram-subtext: #a1a1aa;        /* Perfectly balanced zinc/gray */
+  --color-telegram-muted: #71717a;
+
+  /* Structure: Invisible but felt */
+  --color-telegram-border: rgba(255, 255, 255, 0.08);
+  --color-telegram-hover: rgba(255, 255, 255, 0.04);
+  --color-telegram-active: rgba(255, 255, 255, 0.08);
+
+  /* Glass: Deep and elegant */
+  --color-telegram-glass-bg: rgba(26, 29, 36, 0.75);
+  --color-telegram-glass-border: rgba(255, 255, 255, 0.06);
 }
 
 /* Light Theme Overrides */
 :root.light {
-  --color-telegram-bg: #f0f2f5;
-  --color-telegram-surface: #ffffff;
-  --color-telegram-primary: #e69500;
-  --color-telegram-secondary: #2481cc;
-  --color-telegram-text: #1a1a1a;
-  --color-telegram-subtext: #65676b;
-  --color-telegram-border: rgba(0, 0, 0, 0.1);
-  --color-telegram-hover: rgba(0, 0, 0, 0.03);
-  --color-telegram-glass-bg: #ffffff;
-  --color-telegram-glass-border: #000000;
+  /* LIGHT MODE: Clean, breathable, and structured */
+  --color-telegram-bg: #dcdfe4;             /* A muted, low-reflectivity canvas */
+  --color-telegram-surface: #e8eaed;        /* Soft surface, significantly dimmed */
+  --color-telegram-surface-elevated: #f0f2f5; /* Highest elevation, still NOT pure white */
+
+  /* Accents: Deep, rich, and matte */
+  --color-telegram-primary: #b35f00;        /* Burnished amber, low glare */
+  --color-telegram-primary-hover: #995100;
+  --color-telegram-on-primary: #e8eaed;     
+  
+  --color-telegram-secondary: #21639c;      /* Muted steel blue */
+  --color-telegram-secondary-hover: #194f7d;
+  --color-telegram-on-secondary: #e8eaed; 
+
+  /* Typography: Soft Contrast */
+  --color-telegram-text: #2c333a;           /* Deep slate instead of harsh black */
+  --color-telegram-subtext: #5f6973;        
+  --color-telegram-muted: #85909a;
+
+  /* Structure: Defined but gentle */
+  --color-telegram-border: rgba(30, 35, 40, 0.12);
+  --color-telegram-hover: rgba(30, 35, 40, 0.05);
+  --color-telegram-active: rgba(30, 35, 40, 0.09);
+
+  /* Glass: Frosted gray rather than clear white */
+  --color-telegram-glass-bg: rgba(232, 234, 237, 0.85);
+  --color-telegram-glass-border: rgba(30, 35, 40, 0.1);
 }
 
 body,
@@ -307,4 +341,27 @@ body,
 .scrollbar-none {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+    animation: theme-wave-reveal 0.6s ease-in-out;
+}
+
+@keyframes theme-wave-reveal {
+    from {
+        clip-path: circle(0px at 0% 0%);
+    }
+    to {
+        clip-path: circle(var(--theme-transition-radius, 150%) at 0% 0%);
+    }
+}
+.theme-transitioning,
+.theme-transitioning * {
+    transition: none !important;
 }

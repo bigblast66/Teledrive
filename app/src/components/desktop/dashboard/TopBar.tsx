@@ -1,4 +1,4 @@
-import { HardDrive, LayoutGrid, Sun, Moon, Settings, Share2, X, Globe } from 'lucide-react';
+import { HardDrive, LayoutGrid, Sun, Moon, Settings, Share2, X, Globe, DownloadCloud, FolderInput, Trash2 } from 'lucide-react';
 import { useTheme } from '../../../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../context/SettingsContext';
@@ -51,6 +51,55 @@ export function TopBar({
         return () => clearInterval(interval);
     }, [settings.proxyEnabled, settings.proxyLiveStateEnabled]);
 
+    if (selectedIds.length > 0) {
+        return (
+            <header className="h-14 border-b border-telegram-border flex items-center px-4 gap-3 bg-telegram-primary/10 backdrop-blur-md sticky top-0 z-10 animate-in fade-in slide-in-from-top-2" onClick={e => e.stopPropagation()}>
+                <button
+                    onClick={onClearSelection}
+                    className="p-2 hover:bg-telegram-hover rounded-md text-telegram-subtext hover:text-telegram-text transition"
+                    title={t('files.clear_selection')}
+                >
+                    <X className="w-5 h-5" />
+                </button>
+
+                <span className="text-sm font-medium text-telegram-text">
+                    {t('files.items_selected', { count: selectedIds.length })}
+                </span>
+
+                <div className="flex-1 flex items-center justify-end gap-2">
+                    <button
+                        onClick={onBulkDownload}
+                        className="px-3 py-1.5 bg-telegram-hover hover:bg-telegram-border rounded-md text-xs text-telegram-text transition flex items-center gap-1.5 font-medium"
+                    >
+                        <DownloadCloud className="w-3.5 h-3.5" />
+                        {t('files.download_selected')}
+                    </button>
+                    <button
+                        onClick={onShowMoveModal}
+                        className="px-3 py-1.5 bg-telegram-primary/20 hover:bg-telegram-primary/30 text-telegram-primary rounded-md text-xs transition flex items-center gap-1.5 font-medium"
+                    >
+                        <FolderInput className="w-3.5 h-3.5" />
+                        {t('files.move_to')}
+                    </button>
+                    <button
+                        onClick={onBulkShare}
+                        className="px-3 py-1.5 bg-telegram-primary/20 hover:bg-telegram-primary/30 text-telegram-primary rounded-md text-xs transition flex items-center gap-1.5 font-medium"
+                    >
+                        <Share2 className="w-3.5 h-3.5" />
+                        {t('files.share')}
+                    </button>
+                    <button
+                        onClick={onBulkDelete}
+                        className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-md text-xs transition flex items-center gap-1.5 font-medium"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {t('files.delete')}
+                    </button>
+                </div>
+            </header>
+        );
+    }
+
     return (
         <header className="h-14 border-b border-telegram-border flex items-center px-4 justify-between bg-telegram-surface/80 backdrop-blur-md sticky top-0 z-10" onClick={e => e.stopPropagation()}>
             <div className="flex-1 flex items-center justify-start gap-4">
@@ -72,17 +121,6 @@ export function TopBar({
             </div>
 
             <div className="flex-1 flex items-center justify-end gap-2">
-                {selectedIds.length > 0 && (
-                    <div className="flex items-center gap-2 mr-4 animate-in fade-in slide-in-from-top-2">
-                        <span className="text-xs text-telegram-subtext mr-2">{t('files.items_selected', { count: selectedIds.length })}</span>
-                        <button onClick={onClearSelection} className="px-2 py-1.5 hover:bg-telegram-hover rounded-md text-xs text-telegram-subtext hover:text-telegram-text transition flex items-center gap-1" title={t('files.clear_selection')}><X className="w-3 h-3" /></button>
-                        <button onClick={onShowMoveModal} className="px-3 py-1.5 bg-telegram-primary/20 hover:bg-telegram-primary/30 text-telegram-primary rounded-md text-xs transition font-medium">{t('files.move_to')}</button>
-                        <button onClick={onBulkDownload} className="px-3 py-1.5 bg-telegram-hover hover:bg-telegram-border rounded-md text-xs text-telegram-text transition">{t('files.download_selected')}</button>
-                        <button onClick={onBulkShare} className="px-3 py-1.5 bg-telegram-primary/20 hover:bg-telegram-primary/30 text-telegram-primary rounded-md text-xs transition font-medium flex items-center gap-1"><Share2 className="w-3 h-3" />{t('files.share')} ({selectedIds.length})</button>
-                        <button onClick={onBulkDelete} className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-md text-xs transition">{t('files.delete')}</button>
-                    </div>
-                )}
-
                 {settings.proxyEnabled && settings.proxyLiveStateEnabled && (
                     <div 
                         className="flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded bg-white/5 border border-telegram-border text-[11px] text-telegram-subtext font-mono transition-all group relative cursor-help"

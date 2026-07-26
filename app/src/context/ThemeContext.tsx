@@ -2,6 +2,7 @@ import { createContext, useContext, useState, ReactNode, useLayoutEffect, useCal
 import { CustomTheme, applyTheme as applyThemeToDOM, removeCustomTheme as removeCustomThemeFromDOM } from '../theme/themeEngine';
 import { BUILTIN_THEMES } from '../theme/presets';
 
+
 type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
@@ -116,23 +117,90 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
     }, [activeCustomThemeId, allThemes, theme]);
 
-    const toggleTheme = useCallback(() => {
-        if (activeCustomThemeId) {
-            // Deactivate custom theme, toggle to opposite base mode
-            const activeTheme = allThemes.find(t => t.id === activeCustomThemeId);
-            const nextBase: Theme = activeTheme?.isDark ? 'light' : 'dark';
-            setActiveCustomThemeIdState(null);
-            safeTrySet('active-custom-theme-id', '');
-            removeCustomThemeFromDOM();
-            setThemeState(nextBase);
-        } else {
-            setThemeState(t => t === 'dark' ? 'light' : 'dark');
+    
+    const runThemeTransition = useCallback((updateFn: () => void, prevIsDark: boolean, goingDark: boolean) => {
+        const supportsMask = typeof CSS !== 'undefined' &&
+            (CSS.supports('mask-image', 'linear-gradient(black, transparent)') ||
+            CSS.supports('-webkit-mask-image', 'linear-gradient(black, transparent)'));
+
+        if (!supportsMask) {
+            updateFn();
+            return;
         }
-    }, [activeCustomThemeId, allThemes]);
+
+        document.documentElement.classList.add('theme-transitioning');
+
+        const oldColor = prevIsDark ? '#0f0f0f' : '#ffffff';
+        // going dark: line sweeps from top-left toward bottom-right.
+        // going light: line sweeps from bottom-right toward top-left.
+        const direction = goingDark ? 'to bottom right' : 'to top left';
+
+        updateFn();
+
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.inset = '0';
+        overlay.style.zIndex = '2147483647';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.backgroundColor = oldColor;
+        document.body.appendChild(overlay);
+
+        const duration = 700;
+        const start = performance.now();
+
+        // Sweep the reveal edge from -10% to 110% so it clears both corners fully
+        const setWipe = (progress: number) => {
+            const pos = progress * 120 - 10;
+            const maskValue = `linear-gradient(${direction}, transparent ${pos}%, black ${pos + 0.5}%)`;
+            overlay.style.maskImage = maskValue;
+            (overlay.style as any).webkitMaskImage = maskValue;
+        };
+
+        setWipe(0);
+
+        
+        function step(now: number) {
+            const t = Math.min((now - start) / duration, 1);
+            const eased = 1 - Math.pow(1 - t, 2.2); // moderate ease-out — quicker than cubic, gentler than exponential
+            setWipe(eased);
+            if (t < 1) {
+                requestAnimationFrame(step);
+            } else {
+                overlay.remove();
+                document.documentElement.classList.remove('theme-transitioning');
+            }
+        }
+        
+        requestAnimationFrame(step);
+    }, []);
+
+    const toggleTheme = useCallback(() => {
+        const prevIsDark = activeCustomThemeId
+            ? !!(allThemes.find(t => t.id === activeCustomThemeId)?.isDark)
+            : theme === 'dark';
+        const goingDark = !prevIsDark;
+
+        runThemeTransition(() => {
+            if (activeCustomThemeId) {
+                const activeTheme = allThemes.find(t => t.id === activeCustomThemeId);
+                const nextBase: Theme = activeTheme?.isDark ? 'light' : 'dark';
+                setActiveCustomThemeIdState(null);
+                safeTrySet('active-custom-theme-id', '');
+                removeCustomThemeFromDOM();
+                setThemeState(nextBase);
+            } else {
+                setThemeState(t => t === 'dark' ? 'light' : 'dark');
+            }
+        }, prevIsDark, goingDark);
+    }, [activeCustomThemeId, allThemes, theme, runThemeTransition]);
 
     const setTheme = useCallback((newTheme: Theme) => {
-        setThemeState(newTheme);
-    }, []);
+        const prevIsDark = theme === 'dark';
+        const goingDark = newTheme === 'dark';
+        runThemeTransition(() => {
+            setThemeState(newTheme);
+        }, prevIsDark, goingDark);
+    }, [theme, runThemeTransition]);
 
     const setActiveCustomTheme = useCallback((id: string | null) => {
         setActiveCustomThemeIdState(id);

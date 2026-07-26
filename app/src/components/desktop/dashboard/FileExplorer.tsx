@@ -23,6 +23,7 @@ interface FileExplorerProps {
     onDelete: (id: number) => void;
     onDownload: (id: number, name: string) => void;
     onPreview: (file: TelegramFile, orderedFiles?: TelegramFile[]) => void;
+    onOpen: (file: TelegramFile) => void;
     onManualUpload: () => void;
     onFolderUpload: () => void;
     showFolderUpload: boolean;
@@ -73,7 +74,7 @@ function useGridColumns(containerRef: React.RefObject<HTMLDivElement | null>) {
 
 export function FileExplorer({
     files, loading, error, viewMode, selectedIds, activeFolderId,
-    onFileClick, onDelete, onDownload, onPreview, onManualUpload, onFolderUpload, showFolderUpload, onToggleSelection, onDrop, onDragStart, onDragEnd, onShare, onRename, onFileMove,
+    onFileClick, onDelete, onDownload, onPreview, onOpen, onManualUpload, onFolderUpload, showFolderUpload, onToggleSelection, onDrop, onDragStart, onDragEnd, onShare, onRename, onFileMove,
     folders, cardScale, onCardScaleChange
 }: FileExplorerProps) {
     const [sortField, setSortField] = useState<SortField>('name');
@@ -318,6 +319,7 @@ export function FileExplorer({
                                                 file={file}
                                                 isSelected={selectedIds.includes(file.id)}
                                                 onClick={(e) => onFileClick(e, file.id, sortedFiles)}
+                                                onOpen={onOpen}
                                                 onContextMenu={(e) => handleContextMenu(e, file)}
                                                 onDelete={() => onDelete(file.id)}
                                                 onDownload={() => onDownload(file.id, file.name)}
@@ -341,7 +343,7 @@ export function FileExplorer({
             ) : (
                 <div className="flex flex-col w-full">
                     {/* List Header */}
-                    <div className="grid grid-cols-[2rem_2fr_6rem_8rem] gap-4 px-4 py-2 text-xs font-semibold text-telegram-subtext border-b border-telegram-border mb-2 select-none items-center">
+                    <div className="grid grid-cols-[2rem_2fr_6rem_8rem_5.5rem] gap-4 px-4 py-2 text-xs font-semibold text-telegram-subtext border-b border-telegram-border mb-2 select-none items-center">
                         <div className="text-center">#</div>
                         <button onClick={() => handleSort('name')} className="flex items-center gap-1 hover:text-telegram-text transition-colors">
                             {t('common.name')} <SortIcon field="name" />
@@ -405,6 +407,10 @@ export function FileExplorer({
                                         file={file}
                                         selectedIds={selectedIds}
                                         onFileClick={(e, id) => onFileClick(e, id, sortedFiles)}
+                                        onOpen={onOpen}
+                                        onToggleSelection={onToggleSelection}
+                                        onDownload={onDownload}
+                                        onDelete={onDelete}
                                         handleContextMenu={handleContextMenu}
                                         onDragStart={onDragStart}
                                         onDragEnd={onDragEnd}
@@ -423,14 +429,6 @@ export function FileExplorer({
                     y={contextMenu.y}
                     file={contextMenu.file}
                     onClose={() => setContextMenu(null)}
-                    onDownload={() => {
-                        onDownload(contextMenu.file.id, contextMenu.file.name);
-                        setContextMenu(null);
-                    }}
-                    onDelete={() => {
-                        onDelete(contextMenu.file.id);
-                        setContextMenu(null);
-                    }}
                     onPreview={() => {
                         if (contextMenu.file.type === 'folder') {
                              onFileClick({ preventDefault: () => { }, stopPropagation: () => { } } as React.MouseEvent, contextMenu.file.id, sortedFiles);
