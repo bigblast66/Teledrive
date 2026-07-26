@@ -12,7 +12,9 @@ pub async fn cmd_check_encryption_status(app: AppHandle, state: State<'_, Telegr
         .ok_or_else(|| "Not connected to Telegram".to_string())?;
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
 
-    match startup::determine_startup_path(&client, &app_data_dir).await? {
+    let local_db_has_credentials = app_data_dir.join("telegram.session").exists();
+
+    match startup::determine_startup_path(&client, local_db_has_credentials).await? {
         startup::StartupOutcome::UnlockedSilently(key) => {
             *state.encryption_key.lock().await = Some(key);
             Ok("unlocked".to_string())
@@ -33,8 +35,8 @@ pub async fn cmd_unlock(app: AppHandle, password: String, state: State<'_, Teleg
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
 
     let key = match startup::fetch_remote_vault(&client).await {
-        Some(vault) => startup::complete_unlock_with_password(&app_data_dir, &password, &vault)?,
-        None => startup::complete_first_time_setup(&client, &app_data_dir, &password).await?,
+        Some(vault) => startup::complete_unlock_with_password(&password, &vault)?,
+        None => startup::complete_first_time_setup(&client, &password).await?,
     };
 
     *state.encryption_key.lock().await = Some(key);
