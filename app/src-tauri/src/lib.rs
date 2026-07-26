@@ -42,6 +42,8 @@ pub mod commands;
 pub mod bandwidth;
 pub mod vpn_optimizer;
 pub mod socks5_bridge;
+pub mod crypto;
+pub mod startup;
 
 use tauri::Manager;
 
@@ -540,6 +542,7 @@ pub fn run() {
                 runner_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
                 peer_cache: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
                 cancelled_transfers: Arc::new(tokio::sync::RwLock::new(HashSet::new())),
+                encryption_key: Arc::new(Mutex::new(None)),
             });
             app.manage(Arc::new(bandwidth::BandwidthManager::new(app.handle())));
             app.manage(StreamConfig { token: stream_token.clone(), port: STREAM_PORT });
@@ -665,6 +668,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::cmd_check_encryption_status,
+            commands::cmd_unlock,
             commands::cmd_auth_request_code,
             commands::cmd_auth_sign_in,
             commands::cmd_auth_check_password,

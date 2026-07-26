@@ -28,6 +28,7 @@ pub struct TelegramState {
     /// Set of transfer IDs that have been cancelled. Checked cooperatively
     /// in upload/download chunk loops. Cleared on logout.
     pub cancelled_transfers: Arc<tokio::sync::RwLock<HashSet<String>>>,
+    pub encryption_key: Arc<Mutex<Option<[u8;32]>>>,
 }
 
 pub mod auth;
@@ -42,6 +43,7 @@ pub mod sharing;
 pub mod video_metadata;
 pub mod archive;
 pub mod folder_groups;
+pub mod encryption;
 
 pub use auth::*;
 pub use fs::*;
@@ -55,4 +57,5 @@ pub use sharing::*;
 pub use video_metadata::*;
 pub use archive::*;
 pub use folder_groups::*;
+pub use encryption::*;
 
