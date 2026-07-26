@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eye, HardDrive, Trash2, FolderOpen, Pencil, Play, FileText, Link, Copy, ArrowRightLeft } from 'lucide-react';
+import { Eye, FolderOpen, Pencil, Play, FileText, Link, Copy, ArrowRightLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TelegramFile, TelegramFolder } from '../../../types';
 import { isMediaFile, isPdfFile } from '../../../utils';
@@ -10,8 +10,6 @@ interface ContextMenuProps {
     y: number;
     file: TelegramFile;
     onClose: () => void;
-    onDownload: () => void;
-    onDelete: () => void;
     onPreview: () => void;
     onShare?: () => void;
     onRename?: () => void;
@@ -20,7 +18,7 @@ interface ContextMenuProps {
     activeFolderId?: number | null;
 }
 
-export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPreview, onShare, onRename, onMove, folders, activeFolderId }: ContextMenuProps) {
+export function ContextMenu({ x, y, file, onClose, onPreview, onShare, onRename, onMove, folders, activeFolderId }: ContextMenuProps) {
     const [adjustedPos, setAdjustedPos] = useState({ x, y });
     const menuRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation();
@@ -107,11 +105,6 @@ export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPrevi
                 </button>
             )}
 
-            <button onClick={onDownload} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
-                <HardDrive className="w-4 h-4 text-green-500" />
-                {t('files.download')}
-            </button>
-
             {file.type !== 'folder' && onShare && (
                 <button onClick={onShare} className="flex items-center gap-2 px-2 py-1.5 text-sm text-telegram-text hover:bg-telegram-hover rounded transition-colors text-left w-full">
                     <Link className="w-4 h-4 text-telegram-primary" />
@@ -176,13 +169,6 @@ export function ContextMenu({ x, y, file, onClose, onDownload, onDelete, onPrevi
                     {t('files.rename')}
                 </button>
             )}
-
-            <div className="h-px bg-telegram-border my-1" />
-
-            <button onClick={onDelete} className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-500 hover:bg-red-500/10 rounded transition-colors text-left w-full">
-                <Trash2 className="w-4 h-4" />
-                {t('files.delete')}
-            </button>
         </div>
     );
 }
