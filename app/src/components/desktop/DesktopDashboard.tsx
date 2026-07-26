@@ -85,7 +85,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     const { data: allFiles = [], isLoading, error } = useQuery({
         queryKey: ['files', activeFolderId],
         queryFn: async () => {
-            let accumulatedFiles: any[] = [];
+            const seen = new Map<number, any>();   // NEW — dedup by file id
             queryClient.setQueryData(['files', activeFolderId], []);
 
             const unlisten = await listen<any>('folder-load-chunk', (event) => {
@@ -96,14 +96,16 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                         sizeStr: formatBytes(f.size),
                         type: (f.icon_type as TelegramFile['type']) || 'file'
                     }));
-                    accumulatedFiles = [...accumulatedFiles, ...newChunk];
-                    queryClient.setQueryData(['files', activeFolderId], accumulatedFiles);
+                    for (const file of newChunk) {
+                        seen.set(file.id, file);   // overwrite instead of duplicate
+                    }
+                    queryClient.setQueryData(['files', activeFolderId], Array.from(seen.values()));
                 }
             });
 
             try {
                 await invoke('cmd_get_files', { folderId: activeFolderId });
-                return accumulatedFiles;
+                return Array.from(seen.values());
             } finally {
                 unlisten();
             }
@@ -289,6 +291,14 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             setSelectedIds([id]);
         }
     }
+
+    const handleFileOpen = useCallback((file: TelegramFile) => {
+        if (file.type === 'folder') {
+            setActiveFolderId(file.id);
+        } else {
+            handlePreview(file, displayedFiles);
+        }
+    }, [setActiveFolderId, displayedFiles]);
 
     const handleToggleSelection = useCallback((id: number) => {
         setSelectedIds(ids => ids.includes(id) ? ids.filter(i => i !== id) : [...ids, id]);
@@ -698,6 +708,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                     onDelete={handleDelete}
                     onDownload={(id, name) => queueDownload(id, name, activeFolderId)}
                     onPreview={handlePreview}
+                    onOpen={handleFileOpen}
                     onManualUpload={handleManualUpload}
                     onFolderUpload={handleFolderUpload}
                     showFolderUpload={settings.zipFolders}
