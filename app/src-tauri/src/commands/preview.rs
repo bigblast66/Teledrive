@@ -630,3 +630,52 @@ pub async fn cmd_delete_image_thumbnail(
     }).await;
     Ok(())
 }
+
+
+const TEXT_PREVIEW_MAX_BYTES: u64 = 2 * 1024 * 1024; // 2MB cap — no reason to load more into a preview pane
+
+#[tauri::command]
+pub async fn cmd_get_text_preview(
+    message_id: i32,
+    folder_id: Option<i64>,
+    app_handle: tauri::AppHandle,
+    state: State<'_, TelegramState>,
+) -> Result<String, String> {
+    let cache_dir = app_handle.path().app_data_dir().map_err(|e: tauri::Error| e.to_string())?.join("previews");
+    if tokio::fs::metadata(&cache_dir).await.is_err() {
+        let _ = tokio::fs::create_dir_all(&cache_dir).await;
+    }
+
+    let client_opt = { state.client.lock().await.clone() };
+    let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
+    let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
+
+    let messages = client.get_messages_by_id(&peer, &[message_id]).await.map_err(|e| e.to_string())?;
+    let msg = messages.into_iter().flatten().next().ok_or("File not found")?;
+    let media = msg.media().ok_or("No media on this message")?;
+
+    let size = match &media {
+        Media::Document(d) => d.size() as u64,
+        _ => 0,
+    };
+    if size > TEXT_PREVIEW_MAX_BYTES {
+        return Err(format!("File too large to preview ({} bytes) — open externally instead", size));
+    }
+
+    let unique_id = rand::rng().random::<u64>();
+    let enc_path = cache_dir.join(format!("text_{}_{}.enc", message_id, unique_id));
+    let dec_path = cache_dir.join(format!("text_{}_{}.dec", message_id, unique_id));
+
+    download_to_file(&client, &media, &enc_path).await.map_err(|e| e.to_string())?;
+    crate::crypto::decrypt_file(
+        enc_path.to_str().unwrap(),
+        dec_path.to_str().unwrap(),
+        &crate::crypto::dev_key(),
+    );
+    let _ = tokio::fs::remove_file(&enc_path).await;
+
+    let content = tokio::fs::read_to_string(&dec_path).await.map_err(|e| e.to_string())?;
+    let _ = tokio::fs::remove_file(&dec_path).await; // temp file, no reason to keep it cached
+
+    Ok(content)
+}

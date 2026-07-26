@@ -26,6 +26,15 @@ const AUDIO_EXTENSIONS = ['mp3', 'wav', 'aac', 'flac', 'm4a', 'opus'] as const;
 const MEDIA_EXTENSIONS: readonly string[] = [...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS];
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif'] as const;
 
+const TEXT_EXTENSIONS = [
+    'txt', 'md', 'markdown', 'json', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
+    'js', 'jsx', 'ts', 'tsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp',
+    'css', 'scss', 'html', 'xml', 'sh', 'bash', 'sql', 'rb', 'php', 'swift',
+    'kt', 'log', 'csv', 'env', 'gitignore', 'dockerfile',
+] as const;
+
+
+
 const endsWithAny = (name: string, exts: readonly string[]) => {
     const lower = name.toLowerCase();
     return exts.some(ext => lower.endsWith(ext));
@@ -40,6 +49,10 @@ export const isZipFile     = (name: string) => name.toLowerCase().endsWith('.zip
 export const isRarFile     = (name: string) => name.toLowerCase().endsWith('.rar');
 export const isSevenZFile  = (name: string) => name.toLowerCase().endsWith('.7z');
 export const isArchiveFile = (name: string) => isZipFile(name) || isRarFile(name) || isSevenZFile(name);
+export function isTextFile(name: string): boolean {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    return TEXT_EXTENSIONS.includes(ext);
+}
 
 // ── HTML file input fallback for when Tauri dialog open() fails ──────────
 // Creates a hidden <input type="file"> element, triggers it, and returns

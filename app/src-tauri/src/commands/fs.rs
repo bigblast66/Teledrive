@@ -1559,75 +1559,61 @@ pub async fn cmd_get_files(
     Ok(Vec::new())
 }
 
-/// Extract FileMetadata entries from a list of Telegram messages returned by SearchGlobal.
-fn extract_search_files(msgs: &[tl::enums::Message]) -> Vec<FileMetadata> {
-    let mut files = Vec::new();
-    for msg in msgs {
-        if let tl::enums::Message::Message(m) = msg {
-            if let Some(tl::enums::MessageMedia::Document(d)) = &m.media {
-                if let Some(tl::enums::Document::Document(doc)) = &d.document {
-                    let doc_name = doc.attributes.iter().find_map(|a| match a {
-                        tl::enums::DocumentAttribute::Filename(f) => Some(f.file_name.clone()),
-                        _ => None
-                    }).unwrap_or("Unknown".to_string());
-                    // Prefer the message caption over the built-in document filename
-                    let name = if m.message.is_empty() { doc_name.clone() } else { m.message.clone() };
-                    let size = doc.size as u64;
-                    let mime = doc.mime_type.clone();
-                    let ext = std::path::Path::new(&doc_name).extension().map(|os| os.to_str().unwrap_or("").to_string());
-                    let folder_id = match &m.peer_id {
-                        tl::enums::Peer::Channel(c) => Some(c.channel_id),
-                        tl::enums::Peer::User(u) => Some(u.user_id),
-                        tl::enums::Peer::Chat(c) => Some(c.chat_id),
-                    };
-                    files.push(FileMetadata {
-                        id: m.id as i64, folder_id, name, size,
-                        mime_type: Some(mime), file_ext: ext,
-                        created_at: m.date.to_string(), icon_type: "file".into()
-                    });
-                }
-            }
-        }
-    }
-    files
-}
+
 
 #[tauri::command]
 pub async fn cmd_search_global(
     query: String,
     state: State<'_, TelegramState>,
+    db_pool: State<'_, DbConnection>,
 ) -> Result<Vec<FileMetadata>, String> {
     let client_opt = { state.client.lock().await.clone() };
     #[cfg(debug_assertions)]
-    if client_opt.is_none() { 
+    if client_opt.is_none() {
         return Ok(Vec::new());
     }
     let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
-    
-    log::info!("Searching global for: {}", query);
 
-    let result = client.invoke(&tl::functions::messages::SearchGlobal {
-        q: query,
-        filter: tl::enums::MessagesFilter::InputMessagesFilterDocument,
-        min_date: 0,
-        max_date: 0,
-        offset_rate: 0,
-        offset_peer: tl::enums::InputPeer::Empty,
-        offset_id: 0,
-        limit: 50,
-        folder_id: None,
-        broadcasts_only: false,
-        groups_only: false,
-        users_only: false,
-    }).await.map_err(map_error)?;
+    // Only search folders this app actually manages, not the whole account
+    let folders = crate::commands::folder_groups::cmd_get_enriched_folders(db_pool).await?;
 
-    let files = match result {
-        tl::enums::messages::Messages::Messages(msgs) => extract_search_files(&msgs.messages),
-        tl::enums::messages::Messages::Slice(msgs) => extract_search_files(&msgs.messages),
-        _ => Vec::new(),
-    };
+    let mut all_files = Vec::new();
+    for folder in &folders {
+        let peer = match resolve_peer(&client, Some(folder.id), &state.peer_cache).await {
+            Ok(p) => p,
+            Err(_) => continue, // skip folders that fail to resolve, don't abort the whole search
+        };
 
-    Ok(files)
+        let mut iter = client.search_messages(peer).query(&query);
+        while let Ok(Some(msg)) = iter.next().await {
+            if msg.text() == THUMB_MSG_MARKER {
+                continue;
+            }
+            if let Some(Media::Document(d)) = msg.media() {
+                let doc_name = d.name().to_string();
+                let name = if msg.text().is_empty() { doc_name.clone() } else { msg.text().to_string() };
+                let ext = std::path::Path::new(&doc_name).extension().map(|os| os.to_str().unwrap_or("").to_string());
+                all_files.push(FileMetadata {
+                    id: msg.id() as i64,
+                    folder_id: Some(folder.id),
+                    name,
+                    size: d.size() as u64,
+                    mime_type: d.mime_type().map(|s| s.to_string()),
+                    file_ext: ext,
+                    created_at: msg.date().to_string(),
+                    icon_type: "file".into(),
+                });
+            }
+            if all_files.len() >= 50 {
+                break;
+            }
+        }
+        if all_files.len() >= 50 {
+            break;
+        }
+    }
+
+    Ok(all_files)
 }
 
 #[tauri::command]

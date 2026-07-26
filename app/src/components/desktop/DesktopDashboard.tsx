@@ -6,7 +6,7 @@ import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
 import { TelegramFile, BandwidthStats, ShareInfo } from '../../types';
-import { formatBytes, isMediaFile, isPdfFile, isArchiveFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
+import { formatBytes, isTextFile,isMediaFile, isPdfFile, isArchiveFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
 
 // Components
 import { Sidebar } from './dashboard/Sidebar';
@@ -18,6 +18,7 @@ import { MoveToFolderModal } from './dashboard/MoveToFolderModal';
 import { PreviewModal } from './dashboard/PreviewModal';
 import { MediaPlayer } from './dashboard/MediaPlayer';
 import { ExternalDropBlocker } from './dashboard/ExternalDropBlocker';
+import { TextViewer } from './dashboard/TextViewer';   
 import { PdfViewer } from './dashboard/PdfViewer';
 import { ArchiveViewerModal } from './dashboard/ArchiveViewerModal';
 import { SettingsModal } from './dashboard/SettingsModal';
@@ -70,6 +71,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     };
     const [showRemoteUpload, setShowRemoteUpload] = useState(false);
     const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
+    const [textFile, setTextFile] = useState<TelegramFile | null>(null);
     const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
     const [archiveViewFile, setArchiveViewFile] = useState<TelegramFile | null>(null);
     const [shareFile, setShareFile] = useState<TelegramFile | null>(null);
@@ -203,6 +205,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         setSearchTerm("");
         setPreviewFile(null);
         setPlayingFile(null);
+        setTextFile(null);
         setPdfFile(null);
         setArchiveViewFile(null);
     }, []);
@@ -237,6 +240,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         setSearchResults([]);
         setPreviewFile(null);
         setPlayingFile(null);
+        setTextFile(null);
         setPdfFile(null);
         setPreviewContextFiles([]);
         setPreviewContextIndex(-1);
@@ -359,7 +363,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         onDownload: handleKeyboardDownload,
         onShare: handleKeyboardShare,
         onRename: handleKeyboardRename,
-        enabled: !previewFile && !playingFile && !pdfFile && !archiveViewFile && !showMoveModal
+        enabled: !previewFile && !playingFile && !pdfFile && !textFile && !archiveViewFile && !showMoveModal
     });
 
     const handlePreview = (file: TelegramFile, orderedFiles?: TelegramFile[]) => {
@@ -372,34 +376,45 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         const isMedia = isMediaFile(file.name);
         const isPdf = isPdfFile(file.name);
         const isArchive = isArchiveFile(file.name);
+        const isText = isTextFile(file.name);
 
         if (isArchive) {
             setArchiveViewFile(file);
             setPreviewFile(null);
             setPlayingFile(null);
             setPdfFile(null);
+            setTextFile(null); 
         } else if (isMedia) {
             setPlayingFile(file);
             setPreviewFile(null);
             setPdfFile(null);
             setArchiveViewFile(null);
+            setTextFile(null); 
         } else if (isPdf) {
             setPdfFile(file);
             setPreviewFile(null);
             setPlayingFile(null);
             setArchiveViewFile(null);
-        } else {
+            setTextFile(null); 
+        } else if (isText) {   
+            setTextFile(file);
+            setPreviewFile(null);
+            setPlayingFile(null);
+            setPdfFile(null);
+            setArchiveViewFile(null);
+        }else {
             setPreviewFile(file);
             setPlayingFile(null);
             setPdfFile(null);
             setArchiveViewFile(null);
+            setTextFile(null); 
         }
     };
 
     const navigatePreview = useCallback((step: 1 | -1) => {
         if (previewContextFiles.length === 0) return;
 
-        const currentFileId = previewFile?.id ?? playingFile?.id ?? pdfFile?.id ?? archiveViewFile?.id;
+        const currentFileId = previewFile?.id ?? playingFile?.id ?? pdfFile?.id ?? textFile?.id ??  archiveViewFile?.id;
         if (!currentFileId) return;
 
         const currentIndex = previewContextFiles.findIndex((f) => f.id === currentFileId);
@@ -414,27 +429,38 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         const isMedia = isMediaFile(nextFile.name);
         const isPdf = isPdfFile(nextFile.name);
         const isArchive = isArchiveFile(nextFile.name);
+        const isText = isTextFile(nextFile.name);
 
         if (isArchive) {
             setArchiveViewFile(nextFile);
             setPreviewFile(null);
             setPlayingFile(null);
             setPdfFile(null);
+            setTextFile(null); 
         } else if (isMedia) {
             setPlayingFile(nextFile);
             setPreviewFile(null);
             setPdfFile(null);
             setArchiveViewFile(null);
+            setTextFile(null); 
         } else if (isPdf) {
             setPdfFile(nextFile);
             setPreviewFile(null);
             setPlayingFile(null);
             setArchiveViewFile(null);
-        } else {
+            setTextFile(null); 
+        } else if (isText) { 
+            setTextFile(nextFile);
+            setPreviewFile(null);
+            setPlayingFile(null);
+            setPdfFile(null);
+            setArchiveViewFile(null);
+        }else {
             setPreviewFile(nextFile);
             setPlayingFile(null);
             setPdfFile(null);
             setArchiveViewFile(null);
+            setTextFile(null); 
         }
     }, [previewContextFiles, previewFile, playingFile, pdfFile, archiveViewFile]);
 
@@ -451,7 +477,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
             return { nextFile: null as TelegramFile | null, prevFile: null as TelegramFile | null };
         }
 
-        const currentFileId = previewFile?.id ?? playingFile?.id ?? pdfFile?.id ?? archiveViewFile?.id;
+        const currentFileId = previewFile?.id ?? playingFile?.id ?? pdfFile?.id ?? textFile?.id ?? archiveViewFile?.id;
         if (!currentFileId) {
             return { nextFile: null as TelegramFile | null, prevFile: null as TelegramFile | null };
         }
@@ -620,6 +646,18 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
                         totalItems={previewContextFiles.length}
                         activeFolderId={activeFolderId}
                         key="pdf-viewer"
+                    />
+                )}
+                {textFile && (   
+                    <TextViewer
+                        file={textFile}
+                        onClose={() => setTextFile(null)}
+                        onNext={handleNextPreview}
+                        onPrev={handlePrevPreview}
+                        currentIndex={previewContextIndex}
+                        totalItems={previewContextFiles.length}
+                        activeFolderId={activeFolderId}
+                        key="text-viewer"
                     />
                 )}
                 {showRemoteUpload && (
