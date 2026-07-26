@@ -560,12 +560,20 @@ async fn api_download_file(
                         _ => "download".to_string(),
                     };
 
+                    let mut header_iter = client.iter_download(&media).chunk_size(65536);
+                    let nonce_prefix: [u8; 4] = match header_iter.next().await {
+                        Ok(Some(chunk)) if chunk.len() >= 4 => chunk[0..4].try_into().unwrap(),
+                        _ => return json_error("DECRYPT_ERROR", "Failed to read file header", 500),
+                    };
+
                     return crate::server::build_media_response(
                         &client, &media, &req, &mime, Some(&filename),
                         crate::server::StreamingExtras {
                             extra_headers: vec![],
                             log_label: "API download",
                         },
+                        &crate::crypto::dev_key(),
+                        &nonce_prefix,
                     );
                 }
             }

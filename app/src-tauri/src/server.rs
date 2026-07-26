@@ -96,14 +96,20 @@ pub fn build_media_response(
     mime: &str,
     filename: Option<&str>,
     extras: StreamingExtras,
+    key: &[u8; 32],
+    nonce_prefix: &[u8; 4],
 ) -> HttpResponse {
-    let size = match media {
+    use crate::crypto::{self, BLOCK_SIZE};
+    const ENC_BLOCK: u64 = (BLOCK_SIZE + 16) as u64;
+
+    let raw_size = match media {
         Media::Document(d) => d.size() as u64,
         Media::Photo(_) => 0,
         _ => 0,
     };
+    let size = if raw_size > 0 { crypto::plaintext_size(raw_size, BLOCK_SIZE as u64) } else { 0 };
 
-    // Parse Range header
+    // --- Range parsing (unchanged, operates on plaintext `size` now) ---
     let mut start_byte = 0u64;
     let mut end_byte = if size > 0 { size - 1 } else { 0 };
     let mut is_range = false;
@@ -119,72 +125,49 @@ pub fn build_media_response(
             }
         }
     }
+    let content_length = if is_range { end_byte - start_byte + 1 } else { size };
 
-    let content_length = if is_range {
-        end_byte - start_byte + 1
-    } else {
-        size
-    };
+    // --- NEW: map plaintext range to crypto block range ---
+    let start_block = start_byte / BLOCK_SIZE as u64;
+    let end_block = end_byte / BLOCK_SIZE as u64;
+    let offset_in_first_block = (start_byte % BLOCK_SIZE as u64) as usize;
 
-    // Chunk alignment for Telegram's upload.getFile offset requirement.
-    //
-    // CRITICAL: Without the `precise` flag (which grammers-client does not
-    // expose), Telegram may route the request through a CDN that rounds the
-    // offset down to a CDN chunk boundary (commonly 512 KB = 524288 bytes).
-    // If our requested offset is not aligned to this boundary, the CDN
-    // silently returns data starting from the rounded-down position.
-    //
-    // Example: requesting offset 111935488 (213.48 × 512 KB) gets rounded
-    // to 111673344 (213 × 512 KB), introducing a 262 KB shift. This
-    // misalignment accumulates across successive Range requests and
-    // eventually corrupts the MP4 box parsing (triggering the "ORrI" error).
-    //
-    // Fix: always align to 512 KB boundaries, then slice off the leading
-    // bytes to serve the exact byte range the client requested.
+    // encrypted-file byte offset where the first needed block begins
+    let enc_start_offset = 4 + start_block * ENC_BLOCK;
+
+    // --- CDN alignment (same trick as before, now applied to enc_start_offset) ---
     let mut download_iter = client.iter_download(media);
     let mut bytes_to_skip: usize = 0;
 
-    if start_byte > 0 {
-        /// MTProto chunk size (must be divisible by grammers' MIN_CHUNK_SIZE).
-        /// 65536 is safe — it is the default and widely tested.
-        const CHUNK_SIZE: i32 = 65536;
-        /// Telegram CDN alignment boundary. 512 KB is the largest observed
-        /// CDN chunk size; aligning to this boundary prevents ANY rounding.
-        const CDN_ALIGNMENT: u64 = 524288; // 512 KB
+    if enc_start_offset > 0 {
+        const CHUNK_SIZE: i32 = 524288;
+        const CDN_ALIGNMENT: u64 = 524288;
 
-        // 1) Round the requested start down to a CDN-safe boundary.
-        let cdn_aligned_start = (start_byte / CDN_ALIGNMENT) * CDN_ALIGNMENT;
-
-        // 2) Compute how many 64 KB chunks to skip to reach that boundary.
+        let cdn_aligned_start = (enc_start_offset / CDN_ALIGNMENT) * CDN_ALIGNMENT;
         let chunk_index = (cdn_aligned_start / CHUNK_SIZE as u64) as i32;
 
-        // Always set chunk size for predictable download behaviour.
         download_iter = download_iter.chunk_size(CHUNK_SIZE);
         if chunk_index > 0 {
             download_iter = download_iter.skip_chunks(chunk_index);
         }
-
-        // 3) Leading bytes between the CDN-aligned offset and the client's
-        //    actual requested start must be discarded.
-        bytes_to_skip = (start_byte - cdn_aligned_start) as usize;
-
-        // Safety: cdn_aligned_start ≤ start_byte by construction.
-        debug_assert!(
-            cdn_aligned_start <= start_byte,
-            "CDN alignment invariant violated: aligned {} > requested {}",
-            cdn_aligned_start, start_byte
-        );
-
-        log::debug!(
-            "Range alignment: requested={}, cdn_aligned={}, chunk_index={}, bytes_to_skip={}",
-            start_byte, cdn_aligned_start, chunk_index, bytes_to_skip,
-        );
+        bytes_to_skip = (enc_start_offset - cdn_aligned_start) as usize;
     }
 
     let label = extras.log_label;
+    let key = *key;
+    let nonce_prefix = *nonce_prefix;
+
     let stream = async_stream::stream! {
         let mut skipped: usize = 0;
-        let mut total_yielded: u64 = 0;
+        let mut block_buffer: Vec<u8> = Vec::new();
+        let mut current_block = start_block;
+        let mut plaintext_yielded: u64 = 0;
+
+        // ciphertext length of the block we're currently filling
+        let mut expected_block_len = {
+            let remaining_enc = raw_size - 4 - current_block * ENC_BLOCK;
+            std::cmp::min(ENC_BLOCK, remaining_enc) as usize
+        };
 
         while let Some(chunk) = download_iter.next().await.transpose() {
             match chunk {
@@ -202,31 +185,51 @@ pub fn build_media_response(
                         }
                     }
 
-                    if total_yielded + data_slice.len() as u64 > content_length {
-                        let allowed = (content_length - total_yielded) as usize;
-                        if allowed > 0 {
-                            yield Ok::<_, actix_web::Error>(web::Bytes::from(data_slice[..allowed].to_vec()));
-                            total_yielded += allowed as u64;
+                    block_buffer.extend_from_slice(&data_slice);
+
+                    // drain as many complete blocks as we've buffered
+                    while block_buffer.len() >= expected_block_len {
+                        let block_cipher: Vec<u8> = block_buffer.drain(..expected_block_len).collect();
+
+                        let plaintext_block = match crypto::decrypt_block(&key, &nonce_prefix, current_block, &block_cipher) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                log::error!("{} decrypt error on block {}: {}", label, current_block, e);
+                                return;
+                            }
+                        };
+
+                        let mut slice: &[u8] = &plaintext_block;
+                        if current_block == start_block {
+                            slice = &slice[offset_in_first_block..];
                         }
-                        break;
-                    } else {
-                        let len = data_slice.len() as u64;
-                        yield Ok::<_, actix_web::Error>(web::Bytes::from(data_slice));
-                        total_yielded += len;
-                        if total_yielded >= content_length {
-                            break;
+
+                        let remaining_needed = content_length - plaintext_yielded;
+                        let to_yield = std::cmp::min(remaining_needed, slice.len() as u64) as usize;
+
+                        yield Ok::<_, actix_web::Error>(web::Bytes::from(slice[..to_yield].to_vec()));
+                        plaintext_yielded += to_yield as u64;
+
+                        if plaintext_yielded >= content_length || current_block >= end_block {
+                            log::debug!("{} stream completed (yielded: {})", label, plaintext_yielded);
+                            return;
                         }
+
+                        current_block += 1;
+                        let remaining_enc = raw_size - 4 - current_block * ENC_BLOCK;
+                        expected_block_len = std::cmp::min(ENC_BLOCK, remaining_enc) as usize;
                     }
                 }
                 Err(e) => {
                     log::error!("{} stream error: {}", label, e);
-                    break;
+                    return;
                 }
             }
         }
-        log::debug!("{} stream completed (yielded: {})", label, total_yielded);
+        log::debug!("{} stream completed (yielded: {})", label, plaintext_yielded);
     };
 
+    // --- Response headers: unchanged, still uses plaintext `size` ---
     let mut resp = if is_range {
         let mut r = HttpResponse::PartialContent();
         r.insert_header(("Content-Range", format!("bytes {}-{}/{}", start_byte, end_byte, size)));
@@ -242,14 +245,10 @@ pub fn build_media_response(
     resp.insert_header(("Accept-Ranges", "bytes"));
 
     if let Some(fname) = filename {
-        resp.insert_header((
-            "Content-Disposition",
-            format!("attachment; filename=\"{}\"", fname),
-        ));
+        resp.insert_header(("Content-Disposition", format!("attachment; filename=\"{}\"", fname)));
     }
-
-    for (key, val) in &extras.extra_headers {
-        resp.insert_header((*key, val.clone()));
+    for (k, v) in &extras.extra_headers {
+        resp.insert_header((*k, v.clone()));
     }
 
     resp.streaming(stream)
@@ -307,17 +306,27 @@ async fn stream_media(
         data.client.lock().await.clone()
     };
 
+
     if let Some(client) = client_opt {
         log::debug!("Stream request: Client acquired, resolving peer for msg {}...", message_id);
         match resolve_peer(&client, folder_id, &data.peer_cache).await {
             Ok(peer) => {
                 log::debug!("Stream request: Peer resolved, fetching message {}...", message_id);
-                // Try to fetch message efficiently
-                 match client.get_messages_by_id(peer, &[message_id]).await {
+                match client.get_messages_by_id(peer, &[message_id]).await {
                     Ok(messages) => {
                         if let Some(Some(msg)) = messages.first() {
                             if let Some(media) = msg.media() {
                                 log::debug!("Stream request: Message and media found for msg {}", message_id);
+
+                                let mut header_iter = client.iter_download(&media).chunk_size(65536);
+                                let nonce_prefix: [u8; 4] = match header_iter.next().await {
+                                    Ok(Some(chunk)) if chunk.len() >= 4 => chunk[0..4].try_into().unwrap(),
+                                    _ => {
+                                        log::error!("Stream request failed: couldn't read nonce header for msg {}", message_id);
+                                        return HttpResponse::InternalServerError().body("Failed to read file header");
+                                    }
+                                };
+
                                 let mime = mime_type_from_media(&media);
                                 return build_media_response(
                                     &client, &media, &req, &mime, None,
@@ -325,6 +334,8 @@ async fn stream_media(
                                         extra_headers: vec![("Cache-Control", "private, max-age=120".to_string())],
                                         log_label: "Stream",
                                     },
+                                    &crate::crypto::dev_key(),
+                                    &nonce_prefix,
                                 );
                             } else {
                                 log::error!("Stream request failed: Media not found in message {}", message_id);

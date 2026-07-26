@@ -250,6 +250,12 @@ async fn get_shared_file(
                         _ => "application/octet-stream".to_string(),
                     };
                     let filename = &row.file_name;
+                    
+                    let mut header_iter = client.iter_download(&media).chunk_size(65536);
+                    let nonce_prefix: [u8; 4] = match header_iter.next().await {
+                        Ok(Some(chunk)) if chunk.len() >= 4 => chunk[0..4].try_into().unwrap(),
+                        _ => return HttpResponse::InternalServerError().body("Failed to read file header"),
+                    };
 
                     return crate::server::build_media_response(
                         &client, &media, &req, &mime, Some(filename),
@@ -257,6 +263,8 @@ async fn get_shared_file(
                             extra_headers: vec![],
                             log_label: "Share download",
                         },
+                        &crate::crypto::dev_key(),
+                        &nonce_prefix,
                     );
                 }
             }
