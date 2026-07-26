@@ -796,6 +796,21 @@ async fn cmd_upload_file_inner(
 ) -> Result<String, String> {
 
     let size = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?.len();
+
+
+    // Save original filename BEFORE changing path
+    let original_file_name = std::path::Path::new(&path)
+    .file_name()
+    .map(|n| n.to_string_lossy().to_string())
+    .unwrap_or_else(|| "file".to_string());
+    // --- encryption hook ---
+    let encrypted_path = format!("{}.enc", path);
+    crate::crypto::encrypt_file(&path, &encrypted_path, &crate::crypto::dev_key());
+    let path = encrypted_path; // shadow — everything below now reads the encrypted temp file
+    let size = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?.len();
+    // --- end hook ---
+
+
     bw_state.try_reserve_up(size)?;
 
     let tid = transfer_id.unwrap_or_default();
@@ -824,10 +839,7 @@ async fn cmd_upload_file_inner(
         bw_state.release_up(size);
         e
     })?;
-    let file_name = std::path::Path::new(&path)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "file".to_string());
+    let file_name = original_file_name;
 
     // Spawn a progress reporter task that emits events every 250ms
     let cancelled = state.cancelled_transfers.clone();
@@ -925,6 +937,8 @@ async fn cmd_upload_file_inner(
                 id: tid, percent: 100, uploaded_bytes: size, total_bytes: size, speed_bytes_per_sec: 0,
             });
         }
+        //deletet temp encrypted file
+        let _ = tokio::fs::remove_file(&path).await;
         return Ok("File uploaded successfully".to_string());
             }
             Err(e) => {
@@ -1297,6 +1311,14 @@ pub async fn cmd_download_file(
             id: tid, percent: 100, uploaded_bytes: downloaded, total_bytes: total_size, speed_bytes_per_sec: 0,
         });
     }
+
+
+    // --- decryption hook ---
+    let decrypted_path = format!("{}.dec", actual_save_path);
+    crate::crypto::decrypt_file(&actual_save_path, &decrypted_path, &crate::crypto::dev_key());
+    tokio::fs::rename(&decrypted_path, &actual_save_path).await.map_err(|e| e.to_string())?;
+    // --- end hook ---
+
 
     #[cfg(target_os = "android")]
     {
