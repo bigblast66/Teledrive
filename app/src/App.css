@@ -3,62 +3,54 @@
 /* stylelint-disable at-rule-no-unknown */
 /* Dark Theme (Default) - Using Tailwind v4 @theme directive */
 @theme {
-  /* DARK MODE: Premium OLED-style Charcoal */
-  --color-telegram-bg: #111318;             /* Ultra-deep charcoal, not purely black */
-  --color-telegram-surface: #1a1d24;        /* Slightly elevated, rich dark surface */
+ 
+  --color-telegram-bg: #111318;             
+  --color-telegram-surface: #1a1d24;        
   --color-telegram-surface-elevated: #232730;
 
-  /* Accents: Vibrant but controlled */
-  --color-telegram-primary: #f5a524;        /* Crisp, premium gold/amber */
+  --color-telegram-primary: #f5a524;        
   --color-telegram-primary-hover: #d9901c;
-  --color-telegram-on-primary: #000000;     /* Pure black text for perfect readability on gold */
+  --color-telegram-on-primary: #000000;     
   
-  --color-telegram-secondary: #006fee;      /* Modern, high-tech UI blue */
+  --color-telegram-secondary: #006fee;    
   --color-telegram-secondary-hover: #005bc4;
   --color-telegram-on-secondary: #ffffff;
 
-  /* Typography: High-end monochrome */
-  --color-telegram-text: #ecedee;           /* Sharp off-white */
-  --color-telegram-subtext: #a1a1aa;        /* Perfectly balanced zinc/gray */
+  
+  --color-telegram-text: #ecedee;   
+  --color-telegram-subtext: #a1a1aa;        
   --color-telegram-muted: #71717a;
 
-  /* Structure: Invisible but felt */
   --color-telegram-border: rgba(255, 255, 255, 0.08);
   --color-telegram-hover: rgba(255, 255, 255, 0.04);
   --color-telegram-active: rgba(255, 255, 255, 0.08);
 
-  /* Glass: Deep and elegant */
   --color-telegram-glass-bg: rgba(26, 29, 36, 0.75);
   --color-telegram-glass-border: rgba(255, 255, 255, 0.06);
 }
 
 /* Light Theme Overrides */
 :root.light {
-  /* LIGHT MODE: Clean, breathable, and structured */
-  --color-telegram-bg: #dcdfe4;             /* A muted, low-reflectivity canvas */
-  --color-telegram-surface: #e8eaed;        /* Soft surface, significantly dimmed */
-  --color-telegram-surface-elevated: #f0f2f5; /* Highest elevation, still NOT pure white */
+  --color-telegram-bg: #dcdfe4;      
+  --color-telegram-surface: #e8eaed;   
+  --color-telegram-surface-elevated: #f0f2f5; 
 
-  /* Accents: Deep, rich, and matte */
-  --color-telegram-primary: #b35f00;        /* Burnished amber, low glare */
+  --color-telegram-primary: #b35f00;       
   --color-telegram-primary-hover: #995100;
   --color-telegram-on-primary: #e8eaed;     
   
-  --color-telegram-secondary: #21639c;      /* Muted steel blue */
+  --color-telegram-secondary: #21639c;    
   --color-telegram-secondary-hover: #194f7d;
   --color-telegram-on-secondary: #e8eaed; 
 
-  /* Typography: Soft Contrast */
-  --color-telegram-text: #2c333a;           /* Deep slate instead of harsh black */
+  --color-telegram-text: #2c333a;        
   --color-telegram-subtext: #5f6973;        
   --color-telegram-muted: #85909a;
 
-  /* Structure: Defined but gentle */
   --color-telegram-border: rgba(30, 35, 40, 0.12);
   --color-telegram-hover: rgba(30, 35, 40, 0.05);
   --color-telegram-active: rgba(30, 35, 40, 0.09);
 
-  /* Glass: Frosted gray rather than clear white */
   --color-telegram-glass-bg: rgba(232, 234, 237, 0.85);
   --color-telegram-glass-border: rgba(30, 35, 40, 0.1);
 }
