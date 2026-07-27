@@ -16,7 +16,7 @@ const DesktopDashboard = React.lazy(() => import("./components/desktop/DesktopDa
 // variables prevent Vite from resolving the module at build time.
 const MobileDashboard = React.lazy(() => import("./components/mobile/MobileDashboard.tsx"));
 
-import { Toaster, toast } from "sonner";
+import { Toaster } from "sonner";
 import { ConfirmProvider } from "./context/ConfirmContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { SettingsProvider } from "./context/SettingsContext";

@@ -31,7 +31,7 @@ const TEXT_EXTENSIONS = [
     'js', 'jsx', 'ts', 'tsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp',
     'css', 'scss', 'html', 'xml', 'sh', 'bash', 'sql', 'rb', 'php', 'swift',
     'kt', 'log', 'csv', 'env', 'gitignore', 'dockerfile',
-] as const;
+];
 
 
 
