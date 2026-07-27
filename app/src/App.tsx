@@ -4,7 +4,6 @@ import { load } from "@tauri-apps/plugin-store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthWizard } from "./components/shared/AuthWizard";
 import { UnlockScreen } from "./components/shared/UnlockScreen";
-import { AdGateway } from "./components/shared/AdGateway";
 import { ErrorBoundary } from "./components/shared/ErrorBoundary";
 import { UpdateBanner } from "./components/shared/UpdateBanner";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
@@ -26,7 +25,7 @@ import { useTranslation } from "react-i18next";
 
 const queryClient = new QueryClient();
 
-type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "ad-gateway" | "needs-password";
+type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "needs-password";
 
 function AppContent() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
@@ -99,12 +98,7 @@ function AppContent() {
           if (encStatus === "locked" || encStatus === "new") {
             setAuthStatus("needs-password");
           } else {
-            const gatewayPassed = await store.get<boolean>("ad_gateway_passed");
-            if (gatewayPassed) {
-              setAuthStatus("authenticated");
-            } else {
-              setAuthStatus("ad-gateway");
-            }
+            setAuthStatus("authenticated");
           }
         } else {
           setAuthStatus("unauthenticated");
@@ -126,34 +120,34 @@ function AppContent() {
     checkSession();
   }, []);
 
-  // Show thank-you toast when user enters the app after clicking the ad
-  useEffect(() => {
-    if (authStatus !== "authenticated") return;
+  // // Show thank-you toast when user enters the app after clicking the ad
+  // useEffect(() => {
+  //   if (authStatus !== "authenticated") return;
 
-    const showThanks = async () => {
-      try {
-        const store = await load("config.json");
-        const shouldThank = await store.get<boolean>("ad_click_thanks");
-        if (shouldThank) {
-          await store.delete("ad_click_thanks");
-          await store.save();
-          toast.success("Thanks for your support! ", {
-            duration: 3000,
-            style: {
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.1)",
-            },
-          });
-        }
-      } catch {
-        // Non-critical
-      }
-    };
+  //   const showThanks = async () => {
+  //     try {
+  //       const store = await load("config.json");
+  //       const shouldThank = await store.get<boolean>("ad_click_thanks");
+  //       if (shouldThank) {
+  //         await store.delete("ad_click_thanks");
+  //         await store.save();
+  //         toast.success("Thanks for your support! ", {
+  //           duration: 3000,
+  //           style: {
+  //             background: "rgba(255,255,255,0.08)",
+  //             border: "1px solid rgba(255,255,255,0.1)",
+  //           },
+  //         });
+  //       }
+  //     } catch {
+  //       // Non-critical
+  //     }
+  //   };
 
-    // Small delay to let the dashboard finish mounting
-    const timer = setTimeout(showThanks, 600);
-    return () => clearTimeout(timer);
-  }, [authStatus]);
+  //   // Small delay to let the dashboard finish mounting
+  //   const timer = setTimeout(showThanks, 600);
+  //   return () => clearTimeout(timer);
+  // }, [authStatus]);
 
   // Clean up PDF preview cache files on close/beforeunload
   useEffect(() => {
@@ -191,9 +185,6 @@ function AppContent() {
         onDismiss={dismissUpdate}
       />
       <Toaster theme={theme} position="bottom-center" />
-      {authStatus === "ad-gateway" && (
-        <AdGateway onContinue={() => setAuthStatus("authenticated")} />
-      )}
       {authStatus === "needs-password" && (
         <UnlockScreen onSuccess={() => setAuthStatus("authenticated")} />
       )}
@@ -215,7 +206,7 @@ function AppContent() {
         </Suspense>
       )}
       {authStatus === "unauthenticated" && (
-        <AuthWizard onLogin={() => setAuthStatus("ad-gateway")} />
+        <AuthWizard onLogin={() => setAuthStatus("authenticated")} />
       )}
     </main>
   );

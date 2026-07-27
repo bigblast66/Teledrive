@@ -8,7 +8,6 @@ use crate::transcode::TranscodeManager;
 use std::net::TcpListener;
 use std::sync::Arc;
 
-/// Ad banner HTML matching the working cameronamer.com/ad-banner.html structure.
 /// Served from the streaming server so the iframe gets a real http://127.0.0.1 origin.
 /// Key detail: referrerpolicy="no-referrer" on the invoke.js script tag prevents the
 /// browser from sending a Referer header that Adsterra would reject.
