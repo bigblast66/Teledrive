@@ -491,7 +491,7 @@ export function Sidebar({
                 {settings.sidebarCollapsed ? (
                     <>
                         <div
-                            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}
+                            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
                             title={isConnected ? t('common.connected_telegram') : t('common.disconnected_telegram')}
                         />
                         <button
@@ -513,7 +513,7 @@ export function Sidebar({
                 ) : (
                     <>
                         <div className="flex items-center gap-2 text-telegram-subtext text-xs">
-                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                             <span>{isConnected ? t('common.connected_telegram') : t('common.disconnected_telegram')}</span>
                         </div>
 

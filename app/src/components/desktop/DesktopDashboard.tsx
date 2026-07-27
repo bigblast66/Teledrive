@@ -122,6 +122,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         queryKey: ['bandwidth'],
         queryFn: () => invoke<BandwidthStats>('cmd_get_bandwidth'),
         refetchInterval: 5000,
+        refetchIntervalInBackground: false,
         enabled: !!store
     });
 
