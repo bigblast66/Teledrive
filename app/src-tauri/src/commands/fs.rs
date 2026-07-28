@@ -1115,6 +1115,21 @@ pub async fn cmd_delete_file(
     }
 
     client.delete_messages(&peer, &[message_id]).await.map_err(|e| e.to_string())?;
+
+
+    let client_clone = client.clone();
+    let peer_clone = peer.clone();
+    tokio::spawn(async move {
+        let thumb_msg_id = message_id + 1;
+        if let Ok(thumb_check) = client_clone.get_messages_by_id(&peer_clone, &[thumb_msg_id]).await {
+            if let Some(Some(thumb_msg)) = thumb_check.into_iter().next().map(|m| m) {
+                if thumb_msg.text() == THUMB_MSG_MARKER {
+                    let _ = client_clone.delete_messages(&peer_clone, &[thumb_msg_id]).await;
+                }
+            }
+        }
+    });
+    
     Ok(true)
 }
 
