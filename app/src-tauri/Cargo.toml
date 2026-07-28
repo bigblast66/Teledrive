@@ -1,5 +1,5 @@
 [package]
-name = "app"
+name = "teledrive"
 version = "1.9.9"
 description = "Turn your Telegram account into an unlimited, secure cloud storage drive. an Open-source desktop app built with Tauri, Rust, and React."
 authors = ["bigblast66"]
