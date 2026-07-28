@@ -587,7 +587,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   <p className="text-xs font-medium">{t('common.status')}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                  <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
                   <span className={`text-xs font-semibold ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
                     {isConnected ? t('common.connected_telegram') : t('settings.offline')}
                   </span>
@@ -959,7 +959,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             + Create Folder
           </button>
           <div className="flex items-center gap-2 text-telegram-subtext text-[10px] font-semibold uppercase tracking-wider">
-            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
             <span>{isConnected ? 'Connected' : 'Offline'}</span>
           </div>
         </div>
