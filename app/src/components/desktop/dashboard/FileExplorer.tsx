@@ -27,7 +27,7 @@ interface FileExplorerProps {
     onManualUpload: () => void;
     onFolderUpload: () => void;
     showFolderUpload: boolean;
-    onToggleSelection: (id: number) => void;
+    onToggleSelection: (id: number, orderedFiles?: TelegramFile[]) => void;
     onDrop?: (e: React.DragEvent, folderId: number) => void;
     onDragStart?: (fileIds: number[]) => void;
     onDragEnd?: () => void;
@@ -329,7 +329,7 @@ export function FileExplorer({
                                                 onDragEnd={onDragEnd}
                                                 activeFolderId={activeFolderId}
                                                 height={cardHeight}
-                                                onToggleSelection={() => onToggleSelection(file.id)}
+                                                onToggleSelection={() => onToggleSelection(file.id, sortedFiles)}
                                                 onShare={onShare ? () => onShare(file) : undefined}
                                                 selectedIds={selectedIds}
                                             />
@@ -408,7 +408,7 @@ export function FileExplorer({
                                         selectedIds={selectedIds}
                                         onFileClick={(e, id) => onFileClick(e, id, sortedFiles)}
                                         onOpen={onOpen}
-                                        onToggleSelection={onToggleSelection}
+                                        onToggleSelection={(id) => onToggleSelection(id, sortedFiles)}
                                         onDownload={onDownload}
                                         onDelete={onDelete}
                                         handleContextMenu={handleContextMenu}

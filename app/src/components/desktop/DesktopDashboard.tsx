@@ -292,7 +292,11 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         } else {
             // Plain click: select single file
             lastClickedIndexRef.current = currentIndex;
-            setSelectedIds([id]);
+            setSelectedIds(ids =>
+                ids.length === 0
+                    ? [id]
+                    : ids.includes(id) ? ids.filter(i => i !== id) : [...ids, id]
+            );
         }
     }
 
@@ -304,9 +308,12 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
         }
     }, [setActiveFolderId, displayedFiles]);
 
-    const handleToggleSelection = useCallback((id: number) => {
+    const handleToggleSelection = useCallback((id: number, orderedFiles: TelegramFile[] = []) => {
+        const filesSource = orderedFiles.length > 0 ? orderedFiles : displayedFiles;
+        const currentIndex = filesSource.findIndex(f => f.id === id);
+        if (currentIndex >= 0) lastClickedIndexRef.current = currentIndex;
         setSelectedIds(ids => ids.includes(id) ? ids.filter(i => i !== id) : [...ids, id]);
-    }, []);
+    }, [displayedFiles]);
 
     const handleFileMove = useCallback((file: TelegramFile) => {
         setMoveFileTarget(file);
