@@ -283,6 +283,16 @@ async fn download_to_temp_file(
     Ok((archive_path, extract_dir))
 }
 
+#[cfg(target_os = "android")]
+async fn list_rar_contents(
+    client: &grammers_client::Client,
+    media: &Media,
+    max_bytes: u64,
+    filename: &str,
+) -> Result<Vec<ArchiveEntry>, String> {
+    Err("RAR archives are not supported on Android".into())
+}
+
 #[cfg(not(target_os = "android"))]
 async fn list_rar_contents(
     client: &grammers_client::Client,
@@ -322,6 +332,16 @@ async fn list_rar_contents(
     let entries = entries_result?;
     check_non_empty(&entries, filename, "RAR")?;
     Ok(entries)
+}
+
+#[cfg(target_os = "android")]
+async fn extract_rar_entry(
+    client: &grammers_client::Client,
+    media: &Media,
+    max_bytes: u64,
+    entry_index: usize,
+) -> Result<ExtractedEntry, String> {
+    Err("RAR archives are not supported on Android".into())
 }
 
 #[cfg(not(target_os = "android"))]
