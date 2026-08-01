@@ -53,14 +53,13 @@ sha2 = "0.10"
 bcrypt = "0.16"
 constant_time_eq = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
-unrar = "0.5"
 sevenz-rust2 = "0.7"
 path-clean = "1"
 walkdir = "2"
 sqlite = { version = "0.37.0", features = ["bundled"] }
 mp4parse = "0.17"
 urlencoding = "2"
-reqwest = { version = "0.12", features = ["stream", "rustls-tls", "socks"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "socks"] }
 sysinfo = "0.30"
 tokio-rustls = "0.26"
 rustls = "0.23"
@@ -69,6 +68,10 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 keyring= "3"
 image= "0.25"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+unrar = "0.5"
+
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 ndk-context = "0.1.1"
