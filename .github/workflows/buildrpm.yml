@@ -4,54 +4,120 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-rpm:
+  # build-rpm:
+  #   runs-on: ubuntu-22.04
+
+  #   steps:
+  #     - name: Checkout repo
+  #       uses: actions/checkout@v4
+
+  #     - name: Install Tauri Linux dependencies
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y \
+  #           libwebkit2gtk-4.1-dev \
+  #           librsvg2-dev \
+  #           patchelf \
+  #           build-essential \
+  #           curl \
+  #           wget \
+  #           file \
+  #           libssl-dev \
+  #           libgtk-3-dev \
+  #           libayatana-appindicator3-dev
+
+  #     - name: Install Rust
+  #       uses: dtolnay/rust-toolchain@stable
+
+  #     - name: Rust build cache
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         workspaces: './app/src-tauri -> target'
+
+  #     - name: Install Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
+  #         cache-dependency-path: app/package-lock.json
+
+  #     - name: Install npm dependencies
+  #       working-directory: ./app
+  #       run: npm ci
+
+  #     - name: Build RPM
+  #       working-directory: ./app
+  #       run: npm run tauri build -- --bundles rpm
+
+  #     - name: Upload RPM
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: telegram-drive-rpm
+  #         path: app/src-tauri/target/release/bundle/rpm/*.rpm
+  build-android:
     runs-on: ubuntu-22.04
-
+  
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Install Tauri Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            librsvg2-dev \
-            patchelf \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libssl-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust build cache
-        uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+  
+      - uses: actions/setup-java@v4
         with:
-          workspaces: './app/src-tauri -> target'
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+          distribution: temurin
+          java-version: 17
+  
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 20
+          targets: |
+            aarch64-linux-android
+            armv7-linux-androideabi
+            i686-linux-android
+            x86_64-linux-android
+  
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
-
-      - name: Install npm dependencies
-        working-directory: ./app
+  
+      - uses: android-actions/setup-android@v3
+  
+      - name: Install npm packages
+        working-directory: app
         run: npm ci
-
-      - name: Build RPM
-        working-directory: ./app
-        run: npm run tauri build -- --bundles rpm
-
-      - name: Upload RPM
+  
+      - name: Build APK
+        working-directory: app
+        run: npm run tauri android build
+  
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > release.jks
+  
+      - name: Locate APK
+        id: apk
+        run: |
+          APK=$(find app/src-tauri/gen/android/app/build/outputs/apk -name "*unsigned.apk" | head -n1)
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+  
+      - name: Sign APK
+        run: |
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -type d | sort -V | tail -n1)
+  
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks release.jks \
+            --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
+            --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+            --out TelegramDrive.apk \
+            "${{ steps.apk.outputs.apk }}"
+  
+      - name: Verify APK
+        run: |
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -type d | sort -V | tail -n1)
+          "$BUILD_TOOLS/apksigner" verify --verbose TelegramDrive.apk
+  
+      - name: Upload Signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: telegram-drive-rpm
-          path: app/src-tauri/target/release/bundle/rpm/*.rpm
-  
+          name: telegram-drive-apk
+          path: TelegramDrive.apk
