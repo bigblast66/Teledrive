@@ -283,6 +283,7 @@ async fn download_to_temp_file(
     Ok((archive_path, extract_dir))
 }
 
+#[cfg(not(target_os = "android"))]
 async fn list_rar_contents(
     client: &grammers_client::Client,
     media: &Media,
@@ -323,6 +324,7 @@ async fn list_rar_contents(
     Ok(entries)
 }
 
+#[cfg(not(target_os = "android"))]
 async fn extract_rar_entry(
     client: &grammers_client::Client,
     media: &Media,
