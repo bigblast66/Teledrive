@@ -336,11 +336,11 @@ async fn list_rar_contents(
 
 #[cfg(target_os = "android")]
 async fn extract_rar_entry(
-    client: &grammers_client::Client,
-    media: &Media,
-    max_bytes: u64,
-    entry_index: usize,
-) -> Result<ExtractedEntry, String> {
+    _client: &grammers_client::Client,
+    _media: &Media,
+    _max_bytes: u64,
+    _entry_index: usize,
+) -> Result<ExtractedFile, String> {
     Err("RAR archives are not supported on Android".into())
 }
 
