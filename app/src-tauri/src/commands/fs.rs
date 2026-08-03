@@ -808,7 +808,15 @@ async fn cmd_upload_file_inner(
     let original_path = path.clone();
     // --- encryption hook ---
     let encrypted_path = format!("{}.enc", path);
-    crate::crypto::encrypt_file(&path, &encrypted_path, &crate::crypto::dev_key());
+    {
+        let src = path.clone();
+        let dst = encrypted_path.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::crypto::encrypt_file(&src, &dst, &crate::crypto::dev_key())
+        })
+        .await
+        .map_err(|e| format!("encryption task panicked: {e}"))??;
+    }
     let path = encrypted_path; // shadow — everything below now reads the encrypted temp file
     let size = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?.len();
     // --- end hook ---
@@ -951,8 +959,20 @@ async fn cmd_upload_file_inner(
                 let raw_thumb_path = format!("{}.thumb.raw", original_path);
                 let enc_thumb_path = format!("{}.thumb.enc", original_path);
                 let _ = tokio::fs::write(&raw_thumb_path, &thumb_bytes).await;
-                crate::crypto::encrypt_file(&raw_thumb_path, &enc_thumb_path, &crate::crypto::dev_key());
+                let thumb_encrypt_result = {
+                    let src = raw_thumb_path.clone();
+                    let dst = enc_thumb_path.clone();
+                    tokio::task::spawn_blocking(move || {
+                        crate::crypto::encrypt_file(&src, &dst, &crate::crypto::dev_key())
+                    }).await
+                };
                 let _ = tokio::fs::remove_file(&raw_thumb_path).await;
+                if let Err(e) = &thumb_encrypt_result {
+                    log::warn!("thumbnail encrypt task panicked: {e}");
+                } else if let Ok(Err(e)) = &thumb_encrypt_result {
+                    log::warn!("thumbnail encryption failed, skipping thumbnail: {e}");
+                }
+                if matches!(thumb_encrypt_result, Ok(Ok(()))) {
                 if let Ok(encrypted_thumb) = tokio::fs::read(&enc_thumb_path).await {
                     let mut thumb_reader = std::io::Cursor::new(&encrypted_thumb);
                     if let Ok(uploaded_thumb) = client.upload_stream(&mut thumb_reader, encrypted_thumb.len(), "thumb.enc".to_string()).await {
@@ -961,6 +981,7 @@ async fn cmd_upload_file_inner(
                     }
                 }
                 let _ = tokio::fs::remove_file(&enc_thumb_path).await;
+                }
             }
         }
         // --- end hook ---
@@ -1357,7 +1378,15 @@ pub async fn cmd_download_file(
 
     // --- decryption hook ---
     let decrypted_path = format!("{}.dec", actual_save_path);
-    crate::crypto::decrypt_file(&actual_save_path, &decrypted_path, &crate::crypto::dev_key());
+    {
+        let src = actual_save_path.clone();
+        let dst = decrypted_path.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
+        })
+        .await
+        .map_err(|e| format!("decryption task panicked: {e}"))??;
+    }
     tokio::fs::rename(&decrypted_path, &actual_save_path).await.map_err(|e| e.to_string())?;
     // --- end hook ---
 

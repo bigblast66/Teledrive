@@ -171,11 +171,30 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
     }, [onClose, onNext, onPrev]);
 
     return (
-        <div className="fixed inset-0 z-[150] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm" onClick={onClose}>
-            <div className="relative max-w-5xl w-full max-h-screen flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[150] bg-black/90 flex flex-col backdrop-blur-sm" onClick={onClose}>
+            {/* Top bar — always inside the viewport, safe-area aware, so the
+                close button can never end up off-screen (it used to sit at
+                `-top-12` relative to the content box, which only stayed
+                on-screen when there was enough empty backdrop above the
+                image — never guaranteed on a phone). */}
+            <div
+                className="flex items-center justify-end flex-shrink-0 px-4 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top,0px))]"
+                onClick={e => e.stopPropagation()}
+            >
+                <button
+                    onClick={onClose}
+                    className="p-2 bg-black/60 hover:bg-black/80 active:bg-black/80 rounded-full transition-colors"
+                    style={{ color: '#ffffff' }}
+                    aria-label="Close preview"
+                >
+                    <X className="w-6 h-6" />
+                </button>
+            </div>
+
+            <div className="relative flex-1 min-h-0 w-full flex flex-col items-center justify-center px-4" onClick={e => e.stopPropagation()}>
                 <button
                     onClick={onPrev}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors z-10"
                     style={{ color: '#ffffff' }}
                     title="Previous (ArrowLeft / J)"
                 >
@@ -184,19 +203,11 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
 
                 <button
                     onClick={onNext}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors z-10"
                     style={{ color: '#ffffff' }}
                     title="Next (ArrowRight / L)"
                 >
                     <ChevronRight className="w-6 h-6" />
-                </button>
-
-                <button
-                    onClick={onClose}
-                    className="absolute -top-12 right-0 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors"
-                    style={{ color: '#ffffff' }}
-                >
-                    <X className="w-6 h-6" />
                 </button>
 
                 {loading && (
@@ -215,11 +226,11 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                 )}
 
                 {!loading && !error && src && (
-                    <div className="flex flex-col items-center">
+                    <div className="flex flex-col items-center max-w-5xl w-full min-h-0">
                         {isImageFile(file.name) ? (
                             <img
                                 src={src}
-                                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl bg-black"
+                                className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl bg-black"
                                 alt="Preview"
                                 onError={() => {
                                     const key = getPreviewCacheKey(file.id, activeFolderId);
@@ -237,13 +248,19 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                         )}
                     </div>
                 )}
+            </div>
 
-                <div className="absolute bottom-[-3rem] text-white text-sm opacity-50">
-                    {file.name}
-                    {typeof currentIndex === 'number' && typeof totalItems === 'number' && totalItems > 0 && (
-                        <span className="ml-3">{currentIndex + 1}/{totalItems}</span>
-                    )}
-                </div>
+            {/* Filename/index bar — part of the layout flow (with its own
+                safe-area padding) instead of `bottom-[-3rem]`, which could
+                get clipped below the viewport on shorter phone screens. */}
+            <div
+                className="flex-shrink-0 text-center text-white text-sm opacity-60 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] truncate"
+                onClick={e => e.stopPropagation()}
+            >
+                {file.name}
+                {typeof currentIndex === 'number' && typeof totalItems === 'number' && totalItems > 0 && (
+                    <span className="ml-3">{currentIndex + 1}/{totalItems}</span>
+                )}
             </div>
         </div>
     );

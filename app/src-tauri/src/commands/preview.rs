@@ -348,11 +348,15 @@ pub async fn cmd_get_preview(
             if file_ready {
                 // --- decryption hook ---
                 let decrypted_path = save_path.with_extension(format!("{}.dec", ext));
-                crate::crypto::decrypt_file(
-                    save_path.to_str().unwrap(),
-                    decrypted_path.to_str().unwrap(),
-                    &crate::crypto::dev_key(),
-                );
+                {
+                    let src = save_path.to_str().ok_or("invalid save path")?.to_string();
+                    let dst = decrypted_path.to_str().ok_or("invalid decrypted path")?.to_string();
+                    tokio::task::spawn_blocking(move || {
+                        crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
+                    })
+                    .await
+                    .map_err(|e| format!("decryption task panicked: {e}"))??;
+                }
                 tokio::fs::rename(&decrypted_path, &save_path).await.map_err(|e| e.to_string())?;
                 // --- end hook ---
                 let lower_ext = ext.to_lowercase();
@@ -530,11 +534,19 @@ pub async fn cmd_get_thumbnail(
         return Ok("".to_string());
     }
 
-    crate::crypto::decrypt_file(
-        enc_path.to_str().unwrap(),
-        part_path.to_str().unwrap(),
-        &crate::crypto::dev_key(),
-    );
+    {
+        let src = enc_path.to_str().ok_or("invalid encrypted path")?.to_string();
+        let dst = part_path.to_str().ok_or("invalid part path")?.to_string();
+        let result = tokio::task::spawn_blocking(move || {
+            crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
+        })
+        .await
+        .map_err(|e| format!("decryption task panicked: {e}"))?;
+        if let Err(e) = result {
+            let _ = tokio::fs::remove_file(&enc_path).await;
+            return Err(e);
+        }
+    }
     let _ = tokio::fs::remove_file(&enc_path).await;
 
     // Atomically rename part file to final path (Ok = we won the race,
@@ -667,11 +679,19 @@ pub async fn cmd_get_text_preview(
     let dec_path = cache_dir.join(format!("text_{}_{}.dec", message_id, unique_id));
 
     download_to_file(&client, &media, &enc_path).await.map_err(|e| e.to_string())?;
-    crate::crypto::decrypt_file(
-        enc_path.to_str().unwrap(),
-        dec_path.to_str().unwrap(),
-        &crate::crypto::dev_key(),
-    );
+    {
+        let src = enc_path.to_str().ok_or("invalid encrypted path")?.to_string();
+        let dst = dec_path.to_str().ok_or("invalid decrypted path")?.to_string();
+        let result = tokio::task::spawn_blocking(move || {
+            crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
+        })
+        .await
+        .map_err(|e| format!("decryption task panicked: {e}"))?;
+        if let Err(e) = result {
+            let _ = tokio::fs::remove_file(&enc_path).await;
+            return Err(e);
+        }
+    }
     let _ = tokio::fs::remove_file(&enc_path).await;
 
     let content = tokio::fs::read_to_string(&dec_path).await.map_err(|e| e.to_string())?;

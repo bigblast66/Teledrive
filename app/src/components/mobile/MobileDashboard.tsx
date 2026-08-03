@@ -33,6 +33,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'files' | 'downloads' | 'settings'>('files');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const mainScrollRef = useRef<HTMLElement>(null);
   const { isAndroid } = usePlatform();
   const { theme } = useTheme();
   const { settings, updateSetting } = useSettings();
@@ -222,7 +223,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { data: allFiles = [], isLoading } = useQuery({
     queryKey: ['files', activeFolderId],
     queryFn: async () => {
-      let accumulatedFiles: any[] = [];
+      const seen = new Map<number, any>(); // dedup by file id — matches desktop's loader
       queryClient.setQueryData(['files', activeFolderId], []);
 
       const unlisten = await listen<any>('folder-load-chunk', (event) => {
@@ -233,14 +234,16 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
             sizeStr: formatBytes(f.size),
             type: f.icon_type || (f.name.endsWith('/') ? 'folder' : 'file')
           }));
-          accumulatedFiles = [...accumulatedFiles, ...newChunk];
-          queryClient.setQueryData(['files', activeFolderId], accumulatedFiles);
+          for (const file of newChunk) {
+            seen.set(file.id, file); // overwrite instead of duplicate
+          }
+          queryClient.setQueryData(['files', activeFolderId], Array.from(seen.values()));
         }
       });
 
       try {
         await invoke('cmd_get_files', { folderId: activeFolderId });
-        return accumulatedFiles;
+        return Array.from(seen.values());
       } finally {
         unlisten();
       }
@@ -259,6 +262,19 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   // Folder action menu state (replaces swipe-to-reveal)
   const [folderActionMenu, setFolderActionMenu] = useState<TelegramFolder | null>(null);
   const [renameFolder, setRenameFolder] = useState<{ id: number; name: string } | null>(null);
+
+  // Switching folders must never leave stale selection/preview state behind —
+  // otherwise "N selected" + bulk actions can silently target file IDs that
+  // belonged to the folder you just navigated away from. Desktop already
+  // does this (see DesktopDashboard's activeFolderId effect); mobile needs
+  // the same reset.
+  useEffect(() => {
+    setSelectedIds([]);
+    setPlayingFile(null);
+    setPdfFile(null);
+    setPreviewFile(null);
+    setShareFile(null);
+  }, [activeFolderId]);
 
   const handleFolderVisibilityToggle = useCallback(async (folder: TelegramFolder) => {
     const isPublic = folder.is_public || !!folder.username;
@@ -470,7 +486,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       </header>
 
       {/* Main Viewport Container */}
-      <main className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth">
+      <main ref={mainScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth">
         {activeTab === 'files' && (
           <div className="space-y-4">
             {/* Folder Header Breadcrumb */}
@@ -500,6 +516,8 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
             {/* Dynamic Real File List */}
             <TouchFileList
+              key={activeFolderId ?? 'saved-messages'}
+              scrollContainerRef={mainScrollRef}
               files={displayFiles}
               isLoading={isLoading && allFiles.length === 0}
               onDownload={handleDownload}
