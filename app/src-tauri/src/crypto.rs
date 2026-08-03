@@ -105,7 +105,7 @@ pub fn plaintext_size(encrypted_size: u64, block_size: u64) -> u64 {
 
 
 /// Encrypt a single small block — used for the canary value during setup/unlock.
-pub fn encrypt_canary(key: &[u8; 32], nonce_prefix: &[u8; 4], plaintext: &[u8]) -> Vec<u8> {
+pub fn encrypt_canary(key: &[u8; 32], nonce_prefix: &[u8; 4], plaintext: &[u8]) -> Result<Vec<u8>, String> {
     encrypt_block(key, nonce_prefix, 0, plaintext)
 }
 

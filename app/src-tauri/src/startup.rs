@@ -163,7 +163,7 @@ pub async fn complete_first_time_setup(client: &grammers_client::Client, passwor
     rand::rng().fill_bytes(&mut nonce_prefix);
 
     let key = crypto::derive_key(password, &salt);
-    let canary_ciphertext = crypto::encrypt_canary(&key, &nonce_prefix, CANARY_PLAINTEXT);
+    let canary_ciphertext = crypto::encrypt_canary(&key, &nonce_prefix, CANARY_PLAINTEXT)?;
 
     let vault = RemoteVault { salt, canary_ciphertext, canary_nonce_prefix: nonce_prefix };
     store_remote_vault(client, &vault).await?;
