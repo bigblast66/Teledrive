@@ -17,10 +17,11 @@ import { useTelegramConnection } from '../../hooks/useTelegramConnection';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { useFileDownload } from '../../hooks/useFileDownload';
 import { useFileOperations } from '../../hooks/useFileOperations';
-import { formatBytes, isMediaFile, isPdfFile, isImageFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
+import { formatBytes, isMediaFile, isPdfFile, isImageFile, isTextFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
 import { MediaPlayer } from '../desktop/dashboard/MediaPlayer';
 import { PdfViewer } from '../desktop/dashboard/PdfViewer';
 import { PreviewModal } from '../desktop/dashboard/PreviewModal';
+import { TextViewer } from '../desktop/dashboard/TextViewer';
 import { useTheme } from '../../context/ThemeContext';
 import { TelegramFile, TelegramFolder, ShareInfo, BandwidthStats } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
@@ -130,6 +131,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
   const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
   const [previewFile, setPreviewFile] = useState<TelegramFile | null>(null);
+  const [textFile, setTextFile] = useState<TelegramFile | null>(null);
   const [shareFile, setShareFile] = useState<TelegramFile | null>(null);
   const [bulkShareLinks, setBulkShareLinks] = useState<Array<{ file: TelegramFile; link: string }> | null>(null);
   const [bulkShareLoading, setBulkShareLoading] = useState(false);
@@ -365,6 +367,8 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       setPdfFile(file);
     } else if (isImageFile(file.name)) {
       setPreviewFile(file);
+    } else if (isTextFile(file.name)) {
+      setTextFile(file);
     } else {
       toast.info(`Preview not supported for ${file.name}`);
     }
@@ -1032,6 +1036,13 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
           file={previewFile}
           activeFolderId={activeFolderId}
           onClose={() => setPreviewFile(null)}
+        />
+      )}
+      {textFile && (
+        <TextViewer
+          file={textFile}
+          activeFolderId={activeFolderId}
+          onClose={() => setTextFile(null)}
         />
       )}
 

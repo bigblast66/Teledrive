@@ -824,13 +824,29 @@ export function AdaptiveMediaPlayer({
         >
             <div ref={containerRef} className={`relative ${isFullscreen ? 'fixed inset-0 w-screen h-screen max-w-none' : 'w-full max-w-6xl flex flex-col items-center'}`} onClick={e => e.stopPropagation()}>
                 {/* Nav buttons */}
-                <button onClick={onPrev} className={`absolute left-2 top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? 'left-4' : ''}`} title="Previous (ArrowLeft / J)">
+                <button
+                    onClick={onPrev}
+                    className={`absolute top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? '' : 'left-2'}`}
+                    style={isFullscreen ? { left: 'calc(1rem + env(safe-area-inset-left, 0px))' } : undefined}
+                    title="Previous (ArrowLeft / J)"
+                >
                     <ChevronLeft className="w-6 h-6" />
                 </button>
-                <button onClick={onNext} className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? 'right-4' : ''}`} title="Next (ArrowRight / L)">
+                <button
+                    onClick={onNext}
+                    className={`absolute top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? '' : 'right-2'}`}
+                    style={isFullscreen ? { right: 'calc(1rem + env(safe-area-inset-right, 0px))' } : undefined}
+                    title="Next (ArrowRight / L)"
+                >
                     <ChevronRight className="w-6 h-6" />
                 </button>
-                <div className={`absolute z-30 flex items-center gap-2 ${isFullscreen ? 'top-4 right-4' : '-top-12 right-0'}`}>
+                <div
+                    className="absolute z-30 flex items-center gap-2 top-2 right-2"
+                    style={isFullscreen ? {
+                        top: 'calc(1rem + env(safe-area-inset-top, 0px))',
+                        right: 'calc(1rem + env(safe-area-inset-right, 0px))',
+                    } : undefined}
+                >
                     <button
                         onClick={toggleFullscreen}
                         className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all"

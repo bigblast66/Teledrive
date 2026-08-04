@@ -36,58 +36,89 @@ pub fn decrypt_block(key: &[u8; 32], nonce_prefix: &[u8; 4], block_index: u64, c
 
 pub const BLOCK_SIZE: usize = 524288; // 1MB — bump up from the demo's 64KB
 
-// NOTE: these were previously `.expect()`-based and would panic (killing the
-// whole process on Android release builds, where panic=abort is typical) on
-// any read/write/encrypt failure — a missing/evicted temp file, a permission
-// hiccup on a content:// derived cache path, etc. They now return Result so
-// callers can surface a normal "upload/download failed" error instead of
-// crashing. They also still do the file read/encrypt/write synchronously,
-// so callers MUST run them via tokio::task::spawn_blocking rather than
-// calling them directly inside an async fn — otherwise this blocks the
-// async runtime thread for the whole file (which is especially costly on
-// mobile, where large videos/photos are the common case and there are far
-// fewer runtime threads to fall back on).
+// NOTE: these were previously `.expect()`-based (panicking on any failure —
+// which aborts the whole process on Android release builds) AND loaded the
+// *entire* file into a Vec<u8>, then built a second same-sized Vec<u8> for
+// the output, all before writing anything to disk. For a multi-hundred-MB or
+// multi-GB video/photo that's 2x the file size resident in RAM at once,
+// which is exactly the kind of allocation that gets a foreground app killed/
+// backgrounded by Android's low-memory killer — matching "upload always
+// minimizes/crashes". These are now fully streaming: at most one BLOCK_SIZE
+// chunk (~1MB) is ever held in memory, regardless of file size. They also
+// return Result instead of panicking, so callers can surface a normal
+// "upload/download failed" error. They still do blocking I/O, so callers
+// MUST run them via tokio::task::spawn_blocking rather than calling them
+// directly inside an async fn.
 pub fn encrypt_file(input_path: &str, output_path: &str, key: &[u8; 32]) -> Result<(), String> {
-    let plaintext = fs::read(input_path).map_err(|e| format!("failed to read input file: {e}"))?;
+    use std::io::{BufReader, BufWriter, Read, Write};
+
+    let input_file = fs::File::open(input_path).map_err(|e| format!("failed to open input file: {e}"))?;
+    let mut reader = BufReader::new(input_file);
+
+    let output_file = fs::File::create(output_path).map_err(|e| format!("failed to create encrypted output: {e}"))?;
+    let mut writer = BufWriter::new(output_file);
 
     let mut nonce_prefix = [0u8; 4];
     rand::rng().fill_bytes(&mut nonce_prefix);   // <- rand 0.9 fix from earlier
+    writer.write_all(&nonce_prefix).map_err(|e| format!("failed to write encrypted output: {e}"))?;
 
-    let mut output = Vec::new();
-    output.extend_from_slice(&nonce_prefix);
-
+    let mut buf = vec![0u8; BLOCK_SIZE];
     let mut block_index: u64 = 0;
-    for chunk in plaintext.chunks(BLOCK_SIZE) {
-        let ciphertext_block = encrypt_block(key, &nonce_prefix, block_index, chunk)?;
-        output.extend_from_slice(&ciphertext_block);
+    loop {
+        let mut filled = 0;
+        // read_exact-style loop: keep reading until the buffer is full or EOF,
+        // since a single Read::read call isn't guaranteed to fill the buffer.
+        while filled < buf.len() {
+            let n = reader.read(&mut buf[filled..]).map_err(|e| format!("failed to read input file: {e}"))?;
+            if n == 0 { break; }
+            filled += n;
+        }
+        if filled == 0 { break; }
+
+        let ciphertext_block = encrypt_block(key, &nonce_prefix, block_index, &buf[..filled])?;
+        writer.write_all(&ciphertext_block).map_err(|e| format!("failed to write encrypted output: {e}"))?;
         block_index += 1;
+
+        if filled < buf.len() { break; } // last (short) block, EOF reached
     }
 
-    fs::write(output_path, &output).map_err(|e| format!("failed to write encrypted output: {e}"))
+    writer.flush().map_err(|e| format!("failed to write encrypted output: {e}"))
 }
 
 
 pub fn decrypt_file(input_path: &str, output_path: &str, key: &[u8; 32]) -> Result<(), String> {
-    let data = fs::read(input_path).map_err(|e| format!("failed to read encrypted file: {e}"))?;
+    use std::io::{BufReader, BufWriter, Read, Write};
 
-    if data.len() < 4 {
-        return Err("file too short for header".to_string());
-    }
-    let nonce_prefix: [u8; 4] = data[0..4].try_into().map_err(|_| "file too short for header".to_string())?;
-    let ciphertext = &data[4..];
+    let input_file = fs::File::open(input_path).map_err(|e| format!("failed to read encrypted file: {e}"))?;
+    let mut reader = BufReader::new(input_file);
+
+    let mut nonce_prefix = [0u8; 4];
+    reader.read_exact(&mut nonce_prefix).map_err(|_| "file too short for header".to_string())?;
+
+    let output_file = fs::File::create(output_path).map_err(|e| format!("failed to create decrypted output: {e}"))?;
+    let mut writer = BufWriter::new(output_file);
 
     let encrypted_block_size = BLOCK_SIZE + 16; // GCM tag adds 16 bytes per block
-    let mut output = Vec::new();
+    let mut buf = vec![0u8; encrypted_block_size];
     let mut block_index: u64 = 0;
+    loop {
+        let mut filled = 0;
+        while filled < buf.len() {
+            let n = reader.read(&mut buf[filled..]).map_err(|e| format!("failed to read encrypted file: {e}"))?;
+            if n == 0 { break; }
+            filled += n;
+        }
+        if filled == 0 { break; }
 
-    for chunk in ciphertext.chunks(encrypted_block_size) {
-        let plaintext_block = decrypt_block(key, &nonce_prefix, block_index, chunk)
+        let plaintext_block = decrypt_block(key, &nonce_prefix, block_index, &buf[..filled])
             .map_err(|e| format!("decryption failed - {e}"))?;
-        output.extend_from_slice(&plaintext_block);
+        writer.write_all(&plaintext_block).map_err(|e| format!("failed to write decrypted output: {e}"))?;
         block_index += 1;
+
+        if filled < buf.len() { break; } // last (short) block, EOF reached
     }
 
-    fs::write(output_path, &output).map_err(|e| format!("failed to write decrypted output: {e}"))
+    writer.flush().map_err(|e| format!("failed to write decrypted output: {e}"))
 }
 
 pub fn dev_key() -> [u8; 32] {

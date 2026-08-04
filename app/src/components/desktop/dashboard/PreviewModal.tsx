@@ -171,14 +171,22 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
     }, [onClose, onNext, onPrev]);
 
     return (
-        <div className="fixed inset-0 z-[150] bg-black/90 flex flex-col backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[150] bg-black/90 flex flex-col backdrop-blur-sm overflow-hidden" onClick={onClose}>
             {/* Top bar — always inside the viewport, safe-area aware, so the
                 close button can never end up off-screen (it used to sit at
                 `-top-12` relative to the content box, which only stayed
                 on-screen when there was enough empty backdrop above the
-                image — never guaranteed on a phone). */}
+                image — never guaranteed on a phone). We also pad the sides:
+                in landscape orientation the notch/rounded-corner safe area
+                sits on the LEFT/RIGHT edges, not top/bottom, so a button
+                pinned to `right-0` can end up under it. */}
             <div
-                className="flex items-center justify-end flex-shrink-0 px-4 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top,0px))]"
+                className="flex items-center justify-end flex-shrink-0 pb-2"
+                style={{
+                    paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))',
+                    paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+                    paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+                }}
                 onClick={e => e.stopPropagation()}
             >
                 <button
@@ -191,11 +199,18 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                 </button>
             </div>
 
-            <div className="relative flex-1 min-h-0 w-full flex flex-col items-center justify-center px-4" onClick={e => e.stopPropagation()}>
+            <div
+                className="relative flex-1 min-h-0 w-full flex flex-col items-center justify-center"
+                style={{
+                    paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+                    paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+                }}
+                onClick={e => e.stopPropagation()}
+            >
                 <button
                     onClick={onPrev}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors z-10"
-                    style={{ color: '#ffffff' }}
+                    className="absolute top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors z-10"
+                    style={{ color: '#ffffff', left: 'calc(0.5rem + env(safe-area-inset-left, 0px))' }}
                     title="Previous (ArrowLeft / J)"
                 >
                     <ChevronLeft className="w-6 h-6" />
@@ -203,8 +218,8 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
 
                 <button
                     onClick={onNext}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors z-10"
-                    style={{ color: '#ffffff' }}
+                    className="absolute top-1/2 -translate-y-1/2 p-2 bg-black/60 hover:bg-black/80 rounded-full transition-colors z-10"
+                    style={{ color: '#ffffff', right: 'calc(0.5rem + env(safe-area-inset-right, 0px))' }}
                     title="Next (ArrowRight / L)"
                 >
                     <ChevronRight className="w-6 h-6" />
@@ -219,14 +234,14 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                 )}
 
                 {error && (
-                    <div className="text-red-400 bg-white/10 p-4 rounded-lg border border-red-500/20">
+                    <div className="text-red-400 bg-white/10 p-4 rounded-lg border border-red-500/20 max-w-full">
                         <p className="font-bold">Preview Error</p>
-                        <p className="text-sm">{error}</p>
+                        <p className="text-sm break-words">{error}</p>
                     </div>
                 )}
 
                 {!loading && !error && src && (
-                    <div className="flex flex-col items-center max-w-5xl w-full min-h-0">
+                    <div className="flex flex-col items-center max-w-5xl w-full min-w-0 min-h-0">
                         {isImageFile(file.name) ? (
                             <img
                                 src={src}
@@ -239,9 +254,9 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                                 }}
                             />
                         ) : (
-                            <div className="bg-[#1c1c1c] p-8 rounded-xl text-center border border-white/10 shadow-2xl">
+                            <div className="bg-[#1c1c1c] p-8 rounded-xl text-center border border-white/10 shadow-2xl max-w-full min-w-0">
                                 <File className="w-16 h-16 text-telegram-primary mx-auto mb-4" />
-                                <h3 className="text-xl text-white font-medium mb-2">{file.name}</h3>
+                                <h3 className="text-xl text-white font-medium mb-2 break-words">{file.name}</h3>
                                 <p className="text-gray-400 mb-6">Preview not supported in app.</p>
                                 <p className="text-xs text-gray-500">File type: {file.name.split('.').pop()}</p>
                             </div>
@@ -251,10 +266,16 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
             </div>
 
             {/* Filename/index bar — part of the layout flow (with its own
-                safe-area padding) instead of `bottom-[-3rem]`, which could
-                get clipped below the viewport on shorter phone screens. */}
+                safe-area padding on all four sides) instead of
+                `bottom-[-3rem]`, which could get clipped below the
+                viewport on shorter phone screens. */}
             <div
-                className="flex-shrink-0 text-center text-white text-sm opacity-60 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] truncate"
+                className="flex-shrink-0 text-center text-white text-sm opacity-60 py-3 truncate"
+                style={{
+                    paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+                    paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+                    paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))',
+                }}
                 onClick={e => e.stopPropagation()}
             >
                 {file.name}

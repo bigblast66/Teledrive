@@ -1377,6 +1377,9 @@ pub async fn cmd_download_file(
 
 
     // --- decryption hook ---
+    // Every file is assumed to have been encrypted by encrypt_file, so a
+    // decrypt failure here is a real bug (not "old plaintext file") — fail
+    // loudly instead of masking it.
     let decrypted_path = format!("{}.dec", actual_save_path);
     {
         let src = actual_save_path.clone();

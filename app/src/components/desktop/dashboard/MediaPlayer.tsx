@@ -149,8 +149,13 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
     return (
         <div className={`fixed inset-0 z-[200] bg-black/90 animate-in fade-in duration-200 ${isFullscreen ? 'p-0' : 'flex items-center justify-center p-4 backdrop-blur-md'}`} onClick={onClose}>
             <div ref={containerRef} className={`relative ${isFullscreen ? 'w-full h-full' : 'w-full max-w-6xl flex flex-col items-center'}`} onClick={e => e.stopPropagation()}>
-                <div className={`absolute z-30 flex items-center gap-2 ${isFullscreen ? 'top-4 right-4' : '-top-12 right-0'}`}>
-                    <button
+                <div
+                    className={`absolute z-30 flex items-center gap-2 top-2 right-2`}
+                    style={isFullscreen ? {
+                        top: 'calc(1rem + env(safe-area-inset-top, 0px))',
+                        right: 'calc(1rem + env(safe-area-inset-right, 0px))',
+                    } : undefined}
+                >    <button
                         onClick={toggleFullscreen}
                         className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all"
                         title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
@@ -167,7 +172,8 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
                 </div>
                 <button
                     onClick={onPrev}
-                    className={`absolute top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? 'left-4' : 'left-2'}`}
+                    className={`absolute top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? '' : 'left-2'}`}
+                    style={isFullscreen ? { left: 'calc(1rem + env(safe-area-inset-left, 0px))' } : undefined}
                     title="Previous (ArrowLeft / J)"
                 >
                     <ChevronLeft className="w-6 h-6" />
@@ -175,7 +181,8 @@ export function MediaPlayer({ file, onClose, onNext, onPrev, currentIndex, total
 
                 <button
                     onClick={onNext}
-                    className={`absolute top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? 'right-4' : 'right-2'}`}
+                    className={`absolute top-1/2 -translate-y-1/2 p-2 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all z-10 ${isFullscreen ? '' : 'right-2'}`}
+                    style={isFullscreen ? { right: 'calc(1rem + env(safe-area-inset-right, 0px))' } : undefined}
                     title="Next (ArrowRight / L)"
                 >
                     <ChevronRight className="w-6 h-6" />

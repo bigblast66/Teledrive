@@ -347,6 +347,8 @@ pub async fn cmd_get_preview(
             };
             if file_ready {
                 // --- decryption hook ---
+                // Everything is assumed encrypted — fail loudly rather than
+                // silently using potentially-corrupt bytes.
                 let decrypted_path = save_path.with_extension(format!("{}.dec", ext));
                 {
                     let src = save_path.to_str().ok_or("invalid save path")?.to_string();
