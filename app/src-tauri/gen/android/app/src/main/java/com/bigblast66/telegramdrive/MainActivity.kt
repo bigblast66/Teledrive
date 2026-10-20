@@ -49,14 +49,6 @@ class MainActivity : TauriActivity() {
         val uriCacheMap = ConcurrentHashMap<String, CachedFileEntry>()
         val pendingShareCount = AtomicInteger(0)
 
-        init {
-            try {
-                System.loadLibrary("app_lib")
-            } catch (e: UnsatisfiedLinkError) {
-                Log.w(TAG, "libapp_lib not yet loaded in static init: ${e.message}")
-            }
-        }
-
         @JvmStatic
         fun requestStoragePermissions() {
             instance?.let { act ->
@@ -216,18 +208,11 @@ class MainActivity : TauriActivity() {
         }
     }
 
-    private external fun nativeInit(activity: Any)
-
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         instance = this
         appContext = applicationContext
-        try {
-            nativeInit(this)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to call nativeInit: ${e.message}", e)
-        }
         enableEdgeToEdge()
-        super.onCreate(savedInstanceState)
         handleShareIntent(intent)
         checkAndRequestPermissions()
     }

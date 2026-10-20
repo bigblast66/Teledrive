@@ -159,13 +159,19 @@ pub fn stop_foreground_service() {
 }
 
 #[tauri::command]
-pub fn cmd_start_foreground_service() {
+pub fn cmd_start_foreground_service(#[allow(unused)] app_handle: tauri::AppHandle) {
     #[cfg(target_os = "android")]
-    start_foreground_service();
+    {
+        crate::jni_cache::ensure_initialized_from_app(&app_handle);
+        start_foreground_service();
+    }
 }
 
 #[tauri::command]
-pub fn cmd_stop_foreground_service() {
+pub fn cmd_stop_foreground_service(#[allow(unused)] app_handle: tauri::AppHandle) {
     #[cfg(target_os = "android")]
-    stop_foreground_service();
+    {
+        crate::jni_cache::ensure_initialized_from_app(&app_handle);
+        stop_foreground_service();
+    }
 }

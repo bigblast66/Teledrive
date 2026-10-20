@@ -198,6 +198,7 @@ pub fn restart_api_server(_app: &tauri::AppHandle) {
 fn cmd_open_file_externally(path: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
+        crate::jni_cache::ensure_initialized_from_app(&app_handle);
         let ctx = crate::jni_cache::get_android_context()
             .ok_or_else(|| "Android context not initialized".to_string())?;
         let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -261,7 +262,8 @@ fn cmd_open_file_externally(path: String, app_handle: tauri::AppHandle) -> Resul
 /// (cold start). Returns the count of pending shared files and resets the counter.
 #[cfg(target_os = "android")]
 #[tauri::command]
-fn cmd_get_pending_share_count() -> Result<i32, String> {
+fn cmd_get_pending_share_count(app_handle: tauri::AppHandle) -> Result<i32, String> {
+    crate::jni_cache::ensure_initialized_from_app(&app_handle);
     let ctx = crate::jni_cache::get_android_context()
         .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -301,7 +303,8 @@ struct CachedFileEntry {
 
 #[cfg(target_os = "android")]
 #[tauri::command]
-fn cmd_list_cached_files() -> Result<Vec<CachedFileEntry>, String> {
+fn cmd_list_cached_files(app_handle: tauri::AppHandle) -> Result<Vec<CachedFileEntry>, String> {
+    crate::jni_cache::ensure_initialized_from_app(&app_handle);
     let ctx = crate::jni_cache::get_android_context()
         .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -342,7 +345,8 @@ fn cmd_list_cached_files() -> Result<Vec<CachedFileEntry>, String> {
 /// Called by the frontend when the user clears shared files.
 #[cfg(target_os = "android")]
 #[tauri::command]
-fn cmd_remove_cached_path(uri: String) -> Result<(), String> {
+fn cmd_remove_cached_path(uri: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    crate::jni_cache::ensure_initialized_from_app(&app_handle);
     let ctx = crate::jni_cache::get_android_context()
         .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -374,7 +378,8 @@ fn cmd_remove_cached_path(_uri: String) -> Result<(), String> {
 
 #[cfg(target_os = "android")]
 #[tauri::command]
-fn cmd_request_android_permissions() -> Result<bool, String> {
+fn cmd_request_android_permissions(app_handle: tauri::AppHandle) -> Result<bool, String> {
+    crate::jni_cache::ensure_initialized_from_app(&app_handle);
     let ctx = crate::jni_cache::get_android_context()
         .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
@@ -492,28 +497,20 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(target_os = "android")]
             {
-                // SAFETY NET: Wrap all Android JNI initialization in catch_unwind to prevent
-                // any Rust panic from crossing the JNI/FFI boundary and SIGABRTing the process.
-                let jni_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    // In Tauri v2, Tauri does not use or initialize the legacy `ndk-context` crate.
-                    // However, external crates like `reqwest` still require `ndk-context` to access
-                    // JNI handles (e.g. system proxy settings) on Android background threads.
-                    //
-                    // CRITICAL: `with_webview` dispatches its callback asynchronously onto the
-                    // WebView thread. We perform ALL JNI work (ndk-context init, ClassLoader
-                    // caching, MainActivity caching) inside this single callback so there is no
-                    // race between the init and subsequent usage.
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.with_webview(|webview| {
-                            webview.jni_handle().exec(|env, context, _webview| {
-                                crate::jni_cache::init_from_env_and_activity(env, &context);
-                            });
-                        });
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    for _ in 0..50 {
+                        if crate::jni_cache::is_initialized() {
+                            break;
+                        }
+                        crate::jni_cache::ensure_initialized_from_app(&handle);
+                        if crate::jni_cache::is_initialized() {
+                            log::info!("JNI: Initialized successfully during startup polling");
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     }
-                }));
-                if let Err(e) = jni_result {
-                    log::error!("JNI: Android initialization panicked (caught): {:?}", e);
-                }
+                });
             }
 
             app.manage(TelegramState {

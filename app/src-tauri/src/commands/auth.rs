@@ -28,15 +28,15 @@ pub async fn ensure_client_initialized(
     #[cfg(target_os = "android")]
     {
         let mut count = 0;
-        while !crate::jni_cache::is_initialized() {
-            if count >= 200 { // 10 seconds timeout
-                return Err("Timeout waiting for Android JNI context initialization.".to_string());
-            }
-            log::info!("Waiting for Android JNI context to initialize ({}ms)...", count * 50);
+        while !crate::jni_cache::is_initialized() && count < 20 {
             tokio::time::sleep(Duration::from_millis(50)).await;
             count += 1;
         }
-        log::info!("Android JNI context is ready!");
+        if crate::jni_cache::is_initialized() {
+            log::info!("Android JNI context is ready!");
+        } else {
+            log::warn!("Android JNI context not yet initialized; proceeding with client initialization.");
+        }
     }
 
     let mut client_guard = state.client.lock().await;

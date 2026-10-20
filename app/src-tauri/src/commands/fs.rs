@@ -756,6 +756,7 @@ pub async fn cmd_upload_file(
     // Strict JNI Interception Guard for Android URI Schemes
     #[cfg(target_os = "android")]
     {
+        crate::jni_cache::ensure_initialized_from_app(&app_handle);
         if path.contains("content://") || path.contains("msf:") || path.contains("msf%") {
             match copy_to_android_cache(&path) {
                 Ok(cached_path) => {
@@ -1420,6 +1421,7 @@ pub async fn cmd_download_file(
         };
 
         log::info!("JNI: Copying {} from cache {} to public downloads", file_name, actual_save_path);
+        crate::jni_cache::ensure_initialized_from_app(&app_handle);
         
         let jni_success = {
             let mut success = false;
