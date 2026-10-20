@@ -283,7 +283,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                 </div>
 
                 <div className="flex items-center gap-2 pointer-events-auto">
-                    <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md p-1.5 rounded-full border border-white/10">
+                    <div className="hidden sm:flex items-center gap-2 bg-black/40 backdrop-blur-md p-1.5 rounded-full border border-white/10">
                         <button onClick={handleZoomOut} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Zoom Out (-)">
                             <ZoomOut className="w-4 h-4" />
                         </button>
@@ -307,10 +307,10 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
                 </div>
             </div>
 
-            {/* Navigation Buttons */}
+            {/* Navigation Buttons (desktop only to prevent covering touch content on phone) */}
             <button
                 onClick={(e) => { e.stopPropagation(); onPrev?.(); }}
-                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 text-white/50 hover:text-white bg-black/40 backdrop-blur-md hover:bg-black/60 rounded-full transition-all z-10 border border-white/10"
+                className="hidden sm:block absolute left-4 top-1/2 -translate-y-1/2 p-3 text-white/50 hover:text-white bg-black/40 backdrop-blur-md hover:bg-black/60 rounded-full transition-all z-10 border border-white/10"
                 title="Previous file (ArrowLeft / J)"
             >
                 <ChevronLeft className="w-6 h-6" />
@@ -318,7 +318,7 @@ export function PdfViewer({ file, onClose, onNext, onPrev, currentIndex, totalIt
 
             <button
                 onClick={(e) => { e.stopPropagation(); onNext?.(); }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 text-white/50 hover:text-white bg-black/40 backdrop-blur-md hover:bg-black/60 rounded-full transition-all z-10 border border-white/10"
+                className="hidden sm:block absolute right-4 top-1/2 -translate-y-1/2 p-3 text-white/50 hover:text-white bg-black/40 backdrop-blur-md hover:bg-black/60 rounded-full transition-all z-10 border border-white/10"
                 title="Next file (ArrowRight / L)"
             >
                 <ChevronRight className="w-6 h-6" />

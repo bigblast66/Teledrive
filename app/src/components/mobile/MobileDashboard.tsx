@@ -20,7 +20,7 @@ import { useFileOperations } from '../../hooks/useFileOperations';
 import { formatBytes, isMediaFile, isPdfFile, isImageFile, isTextFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
 import { MediaPlayer } from '../desktop/dashboard/MediaPlayer';
 import { PdfViewer } from '../desktop/dashboard/PdfViewer';
-import { PreviewModal } from '../desktop/dashboard/PreviewModal';
+import { MobilePreviewModal } from './MobilePreviewModal';
 import { TextViewer } from '../desktop/dashboard/TextViewer';
 import { useTheme } from '../../context/ThemeContext';
 import { TelegramFile, TelegramFolder, ShareInfo, BandwidthStats } from '../../types';
@@ -409,6 +409,32 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       toast.info(`Preview not supported for ${file.name}`);
     }
   }, []);
+
+  // Mobile preview navigation context
+  const previewContextFiles = useMemo(() => {
+    return allFiles.filter(f => f.type !== 'folder' && isImageFile(f.name));
+  }, [allFiles]);
+
+  const previewContextIndex = useMemo(() => {
+    if (!previewFile) return -1;
+    return previewContextFiles.findIndex(f => f.id === previewFile.id);
+  }, [previewFile, previewContextFiles]);
+
+  const previewNeighbors = useMemo(() => {
+    if (previewContextIndex === -1) return { prevFile: null, nextFile: null };
+    return {
+      prevFile: previewContextIndex > 0 ? previewContextFiles[previewContextIndex - 1] : null,
+      nextFile: previewContextIndex < previewContextFiles.length - 1 ? previewContextFiles[previewContextIndex + 1] : null,
+    };
+  }, [previewContextIndex, previewContextFiles]);
+
+  const handleNextPreview = useCallback(() => {
+    if (previewNeighbors.nextFile) setPreviewFile(previewNeighbors.nextFile);
+  }, [previewNeighbors.nextFile]);
+
+  const handlePrevPreview = useCallback(() => {
+    if (previewNeighbors.prevFile) setPreviewFile(previewNeighbors.prevFile);
+  }, [previewNeighbors.prevFile]);
 
   const handleRenameFile = useCallback((file: TelegramFile) => {
     const currentName = fileRenames.get(file.id) || file.name;
@@ -1355,10 +1381,18 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
         </div>
       )}
       {previewFile && (
-        <PreviewModal
+        <MobilePreviewModal
           file={previewFile}
           activeFolderId={activeFolderId}
           onClose={() => setPreviewFile(null)}
+          onNext={previewNeighbors.nextFile ? handleNextPreview : undefined}
+          onPrev={previewNeighbors.prevFile ? handlePrevPreview : undefined}
+          currentIndex={previewContextIndex >= 0 ? previewContextIndex : undefined}
+          totalItems={previewContextFiles.length}
+          nextFile={previewNeighbors.nextFile}
+          prevFile={previewNeighbors.prevFile}
+          onDownload={handleDownload}
+          onShare={setShareFile}
         />
       )}
       {textFile && (

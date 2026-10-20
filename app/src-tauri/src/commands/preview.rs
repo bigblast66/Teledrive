@@ -249,21 +249,16 @@ pub async fn cmd_get_preview(
                     log::warn!("Bandwidth limit hit for preview: {}", e);
                     false
                 } else {
-                    // Download to a temporary .part file to avoid race conditions
-                    // when concurrent requests try to download the same file.
-                    // After successful download, atomically rename to the final path.
-                    //
-                    // Use a random u64 suffix so concurrent requests for the
-                    // same file write to separate .part files — preventing the inter-request
-                    // delete/write race that previously produced empty files.
+                    // Download to a temporary .enc file to avoid race conditions.
+                    // Decrypt to .part file and atomically rename to save_path.
                     let unique_id = rand::rng().random::<u64>();
+                    let enc_path = save_path.with_extension(format!("{}_{}.enc", ext, unique_id));
                     let part_path = save_path.with_extension(format!("{}_{}.part", ext, unique_id));
-                    // part_path_str is no longer needed — download_to_file takes &Path directly
 
                     let mut download_ok = false;
 
                     // Early-exit: another concurrent request may have already completed
-                    // the download and renamed its .part file to the final path.
+                    // the download and renamed its decrypted file to the final path.
                     if tokio::fs::metadata(&save_path).await.map_or(false, |m| m.len() > 0) {
                         log::info!("Preview already downloaded by concurrent request (final file exists)");
                         bw_state.release_down(size);
@@ -272,26 +267,11 @@ pub async fn cmd_get_preview(
 
                     // Attempt 1: download with original media (may have stale file reference)
                     if !download_ok {
-                        let _ = tokio::fs::remove_file(&part_path).await;
-                        match download_to_file(&client, &media, &part_path).await {
+                        let _ = tokio::fs::remove_file(&enc_path).await;
+                        match download_to_file(&client, &media, &enc_path).await {
                             Ok(written) => {
                                 log::info!("Preview download complete: {} bytes.", written);
-                                match tokio::fs::rename(&part_path, &save_path).await {
-                                    Ok(_) => {
-                                        download_ok = true;
-                                        prune_preview_cache(cache_dir.clone(), Some(save_path.clone())).await;
-                                    },
-                                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                                        if tokio::fs::metadata(&save_path).await.map_or(false, |m| m.len() > 0) {
-                                            log::info!("Preview already downloaded by concurrent request");
-                                            download_ok = true;
-                                        }
-                                    },
-                                    Err(e) => {
-                                        log::error!("Failed to rename part file to final path: {}", e);
-                                        let _ = tokio::fs::remove_file(&part_path).await;
-                                    }
-                                }
+                                download_ok = true;
                             },
                             Err(e) => {
                                 log::error!("Preview Download Error (attempt 1/2): {}", e);
@@ -304,32 +284,14 @@ pub async fn cmd_get_preview(
                         // Brief backoff before re-fetching
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-                        // Re-fetch the message to obtain a Media object with a fresh file reference.
-                        // Telegram file references expire; iter_download returns 0 bytes (caught
-                        // by download_to_file) when the reference is stale.
                         if let Ok(fresh_messages) = client.get_messages_by_id(&peer, &[message_id]).await {
                             if let Some(fresh_msg) = fresh_messages.into_iter().flatten().next() {
                                 if let Some(fresh_media) = fresh_msg.media() {
-                                    let _ = tokio::fs::remove_file(&part_path).await;
-                                    match download_to_file(&client, &fresh_media, &part_path).await {
+                                    let _ = tokio::fs::remove_file(&enc_path).await;
+                                    match download_to_file(&client, &fresh_media, &enc_path).await {
                                         Ok(written) => {
                                             log::info!("Preview download complete after re-fetch: {} bytes.", written);
-                                            match tokio::fs::rename(&part_path, &save_path).await {
-                                                Ok(_) => {
-                                                    download_ok = true;
-                                                    prune_preview_cache(cache_dir.clone(), Some(save_path.clone())).await;
-                                                },
-                                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                                                    if tokio::fs::metadata(&save_path).await.map_or(false, |m| m.len() > 0) {
-                                                        log::info!("Preview already downloaded by concurrent request");
-                                                        download_ok = true;
-                                                    }
-                                                },
-                                                Err(e) => {
-                                                    log::error!("Failed to rename part file to final path: {}", e);
-                                                    let _ = tokio::fs::remove_file(&part_path).await;
-                                                }
-                                            }
+                                            download_ok = true;
                                         },
                                         Err(e) => {
                                             log::error!("Preview Download Error (attempt 2/2): {}", e);
@@ -339,28 +301,54 @@ pub async fn cmd_get_preview(
                             }
                         }
                     }
+
                     if !download_ok {
+                        let _ = tokio::fs::remove_file(&enc_path).await;
                         bw_state.release_down(size);
+                        false
+                    } else {
+                        // Decrypt from enc_path to part_path
+                        let src = enc_path.to_str().ok_or("invalid encrypted path")?.to_string();
+                        let dst = part_path.to_str().ok_or("invalid part path")?.to_string();
+                        let dec_res = tokio::task::spawn_blocking(move || {
+                            crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
+                        })
+                        .await
+                        .map_err(|e| format!("decryption task panicked: {e}"))?;
+
+                        let _ = tokio::fs::remove_file(&enc_path).await;
+
+                        if let Err(e) = dec_res {
+                            let _ = tokio::fs::remove_file(&part_path).await;
+                            bw_state.release_down(size);
+                            log::error!("Preview decryption error: {}", e);
+                            return Err(format!("Preview decryption failed: {e}"));
+                        }
+
+                        // Atomically rename decrypted part file to final save_path
+                        match tokio::fs::rename(&part_path, &save_path).await {
+                            Ok(_) => {
+                                prune_preview_cache(cache_dir.clone(), Some(save_path.clone())).await;
+                                true
+                            },
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                if tokio::fs::metadata(&save_path).await.map_or(false, |m| m.len() > 0) {
+                                    log::info!("Preview already decrypted by concurrent request");
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
+                            Err(e) => {
+                                log::error!("Failed to rename part file to final path: {}", e);
+                                let _ = tokio::fs::remove_file(&part_path).await;
+                                false
+                            }
+                        }
                     }
-                    download_ok
                 }
             };
             if file_ready {
-                // --- decryption hook ---
-                // Everything is assumed encrypted — fail loudly rather than
-                // silently using potentially-corrupt bytes.
-                let decrypted_path = save_path.with_extension(format!("{}.dec", ext));
-                {
-                    let src = save_path.to_str().ok_or("invalid save path")?.to_string();
-                    let dst = decrypted_path.to_str().ok_or("invalid decrypted path")?.to_string();
-                    tokio::task::spawn_blocking(move || {
-                        crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
-                    })
-                    .await
-                    .map_err(|e| format!("decryption task panicked: {e}"))??;
-                }
-                tokio::fs::rename(&decrypted_path, &save_path).await.map_err(|e| e.to_string())?;
-                // --- end hook ---
                 let lower_ext = ext.to_lowercase();
                 if ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].contains(&lower_ext.as_str()) {
                     log::info!("Converting file to Base64...");
