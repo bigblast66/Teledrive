@@ -180,6 +180,13 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
     };
 
     const handleManualUpload = async () => {
+        if (isAndroidPlatform) {
+            try {
+                await invoke('cmd_request_android_permissions');
+            } catch {
+                // best-effort
+            }
+        }
         const paths = await pickWithFallback(
             async () => {
                 const selected = await open({ multiple: true, directory: false });
@@ -312,6 +319,10 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         toast.info(`Queued remote upload from URL`);
     };
 
+    const clearFinished = () => {
+        setUploadQueue(q => q.filter(i => i.status !== 'success'));
+    };
+
     return {
         uploadQueue,
         setUploadQueue,
@@ -319,6 +330,7 @@ export function useFileUpload(activeFolderId: number | null, store: Store | null
         handleFolderUpload,
         handleDropUpload,
         handleUrlUpload,
+        clearFinished,
         cancelAll,
         cancelItem,
         retryItem,

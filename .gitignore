@@ -6,7 +6,7 @@ dist/
 
 # Rust
 /app/src-tauri/target/
-/app/src-tauri/gen/
+/app/src-tauri/gen/schemas/
 **/*.rs.bk
 
 # Editors
@@ -22,7 +22,8 @@ Error.html
 
 # Android local builds
 /android/
-/app/src-tauri/gen/android/
+/app/src-tauri/gen/android/.gradle/
+/app/src-tauri/gen/android/**/build/
 *.apk
 *.aab
 .gradle/

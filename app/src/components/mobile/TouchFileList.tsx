@@ -296,18 +296,18 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
           {/* Move-to-folder picker modal */}
           {showMovePicker && (
             <div
-              className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+              className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
               onClick={() => setShowMovePicker(false)}
             >
               <div
-                className="bg-[#1c1c1c] border border-white/10 rounded-2xl p-5 w-[300px] max-h-[60vh] flex flex-col shadow-2xl"
+                className="bg-telegram-surface border border-telegram-border/40 rounded-2xl p-5 w-full max-w-[340px] max-h-[60vh] flex flex-col shadow-2xl"
                 onClick={e => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-white">Move {selectedIds.length} file{selectedIds.length !== 1 ? 's' : ''} to...</h3>
+                  <h3 className="text-sm font-bold text-telegram-text">Move {selectedIds.length} file{selectedIds.length !== 1 ? 's' : ''} to...</h3>
                   <button
                     onClick={() => setShowMovePicker(false)}
-                    className="p-1.5 rounded-lg hover:bg-white/10 text-telegram-subtext"
+                    className="p-1.5 rounded-lg hover:bg-telegram-hover text-telegram-subtext"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -319,7 +319,7 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
                     className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 ${
                       activeFolderId === null
                         ? 'bg-telegram-primary/10 text-telegram-primary'
-                        : 'text-telegram-subtext hover:bg-white/5'
+                        : 'text-telegram-subtext hover:bg-telegram-hover'
                     }`}
                   >
                     📁 Saved Messages
@@ -330,7 +330,7 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
                       <button
                         key={folder.id}
                         onClick={() => { onBulkMove(folder.id); setShowMovePicker(false); }}
-                        className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold text-telegram-subtext hover:bg-white/5 transition-all duration-200"
+                        className="w-full text-left px-3.5 py-2.5 rounded-xl text-xs font-semibold text-telegram-subtext hover:bg-telegram-hover transition-all duration-200"
                       >
                         📁 {folder.name}
                       </button>
@@ -383,7 +383,7 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
                       isSelected ? 'border-telegram-primary/50 bg-telegram-primary/10' : 'border-telegram-border/20'
                     }`}
                   >
-                    <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-2">
                       {/* Selection checkbox in selection mode */}
                       {isSelectionActive && (
                         <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
@@ -397,8 +397,8 @@ export function TouchFileList({ files, isLoading, onDownload, onDelete, onPrevie
                       <div className="flex-shrink-0">
                         <FileTypeIcon filename={file.name} />
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-telegram-text truncate max-w-[150px] leading-snug">{file.name}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-telegram-text truncate leading-snug">{file.name}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-[10px] text-telegram-subtext/80 font-medium font-mono">{file.sizeStr}</span>
                           <span className="w-1 h-1 bg-telegram-border rounded-full" />

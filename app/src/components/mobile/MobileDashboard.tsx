@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, Lock, ChevronDown, Share2, Link, Copy, Check, X, Loader2, Wifi, Activity, Zap, Eye, EyeOff } from 'lucide-react';
+import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, Lock, ChevronDown, Share2, Link, Copy, Check, X, Loader2, Wifi, Activity, Zap, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
@@ -38,6 +38,14 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { isAndroid } = usePlatform();
   const { theme } = useTheme();
   const { settings, updateSetting } = useSettings();
+
+  // ── Android permissions request on mount ────────────────────────────
+  useEffect(() => {
+    if (!isAndroid) return;
+    invoke('cmd_request_android_permissions').catch((err) => {
+      console.warn('[Permissions] Failed to request permissions:', err);
+    });
+  }, [isAndroid]);
 
   // ── Android deep-link listener (https://t.me/ links) ──────────────────
   useEffect(() => {
@@ -125,8 +133,36 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     handleFolderRename, handleFolderToggleVisibility, handleExportFolderInvite
   } = useTelegramConnection(logoutHandler);
 
-  const { handleManualUpload } = useFileUpload(activeFolderId, store);
-  const { queueDownload, queueBulkDownload } = useFileDownload(store);
+  const {
+    uploadQueue,
+    handleManualUpload,
+    clearFinished: clearUploads,
+    cancelAll: cancelUploads,
+    cancelItem: cancelUploadItem,
+    retryItem: retryUploadItem,
+  } = useFileUpload(activeFolderId, store);
+
+  const {
+    downloadQueue,
+    queueDownload,
+    queueBulkDownload,
+    clearFinished: clearDownloads,
+    cancelAll: cancelDownloads,
+    cancelItem: cancelDownloadItem,
+    retryItem: retryDownloadItem,
+  } = useFileDownload(store);
+
+  const [transfersFilter, setTransfersFilter] = useState<'all' | 'uploads' | 'downloads'>('all');
+
+  const activeUploadsCount = useMemo(() =>
+    uploadQueue.filter(i => i.status === 'uploading' || i.status === 'pending' || i.status === 'downloading').length,
+    [uploadQueue]
+  );
+  const activeDownloadsCount = useMemo(() =>
+    downloadQueue.filter(i => i.status === 'downloading' || i.status === 'pending').length,
+    [downloadQueue]
+  );
+  const totalActiveTransfers = activeUploadsCount + activeDownloadsCount;
 
   const [playingFile, setPlayingFile] = useState<TelegramFile | null>(null);
   const [pdfFile, setPdfFile] = useState<TelegramFile | null>(null);
@@ -494,12 +530,12 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
         {activeTab === 'files' && (
           <div className="space-y-4">
             {/* Folder Header Breadcrumb */}
-            <div className="flex items-center justify-between bg-telegram-hover/20 p-3 rounded-2xl border border-telegram-border/30">
-              <div className="flex items-center gap-2.5">
-                <Folder className="w-5 h-5 text-telegram-primary" />
-                <span className="text-sm font-semibold truncate max-w-[150px]">{activeFolder}</span>
+            <div className="flex items-center justify-between bg-telegram-hover/20 p-3 rounded-2xl border border-telegram-border/30 gap-2">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <Folder className="w-5 h-5 text-telegram-primary flex-shrink-0" />
+                <span className="text-sm font-semibold truncate text-telegram-text">{activeFolder}</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={handleManualUpload}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-telegram-primary text-black hover:bg-telegram-primary/95 border border-telegram-primary/10 active:scale-95 transition-all duration-200"
@@ -545,14 +581,301 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
         )}
 
         {activeTab === 'downloads' && (
-          <div className="flex flex-col items-center justify-center h-[60vh] space-y-3 text-center px-6">
-            <div className="p-4 rounded-full bg-telegram-primary/10 text-telegram-primary border border-telegram-primary/20">
-              <Download className="w-8 h-8 animate-bounce" />
+          <div className="space-y-4">
+            {/* Transfers Header & Controls */}
+            <div className="flex items-center justify-between bg-telegram-hover/20 p-3.5 rounded-2xl border border-telegram-border/30">
+              <div>
+                <h2 className="text-sm font-bold text-telegram-text flex items-center gap-2">
+                  <Download className="w-4 h-4 text-telegram-primary" />
+                  Transfers
+                  {totalActiveTransfers > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-telegram-primary text-black">
+                      {totalActiveTransfers} active
+                    </span>
+                  )}
+                </h2>
+                <p className="text-[11px] text-telegram-subtext mt-0.5">
+                  {uploadQueue.length + downloadQueue.length === 0
+                    ? 'No active or recent transfers'
+                    : `${uploadQueue.length} upload${uploadQueue.length !== 1 ? 's' : ''}, ${downloadQueue.length} download${downloadQueue.length !== 1 ? 's' : ''}`}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {(uploadQueue.some(i => i.status === 'success' || i.status === 'error' || i.status === 'cancelled') ||
+                  downloadQueue.some(i => i.status === 'success' || i.status === 'error' || i.status === 'cancelled')) && (
+                  <button
+                    onClick={() => {
+                      clearUploads();
+                      clearDownloads();
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-telegram-hover/40 text-telegram-subtext hover:text-telegram-text border border-telegram-border/30 transition-all active:scale-95"
+                  >
+                    Clear
+                  </button>
+                )}
+                {totalActiveTransfers > 0 && (
+                  <button
+                    onClick={() => {
+                      cancelUploads();
+                      cancelDownloads();
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-red-500/15 text-red-400 hover:bg-red-500/25 border border-red-500/20 transition-all active:scale-95"
+                  >
+                    Cancel All
+                  </button>
+                )}
+              </div>
             </div>
-            <h3 className="text-base font-bold">Transfers Queue</h3>
-            <p className="text-xs text-telegram-subtext max-w-xs leading-relaxed">
-              Downloads and uploads are safely queued and managed in the background.
-            </p>
+
+            {/* Filter Tabs */}
+            {(uploadQueue.length > 0 || downloadQueue.length > 0) && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setTransfersFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 active:scale-95 ${
+                    transfersFilter === 'all'
+                      ? 'bg-telegram-primary text-black'
+                      : 'bg-telegram-hover/20 text-telegram-subtext border border-telegram-border/30'
+                  }`}
+                >
+                  All ({uploadQueue.length + downloadQueue.length})
+                </button>
+                <button
+                  onClick={() => setTransfersFilter('uploads')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 active:scale-95 ${
+                    transfersFilter === 'uploads'
+                      ? 'bg-telegram-primary text-black'
+                      : 'bg-telegram-hover/20 text-telegram-subtext border border-telegram-border/30'
+                  }`}
+                >
+                  Uploads ({uploadQueue.length})
+                </button>
+                <button
+                  onClick={() => setTransfersFilter('downloads')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 active:scale-95 ${
+                    transfersFilter === 'downloads'
+                      ? 'bg-telegram-primary text-black'
+                      : 'bg-telegram-hover/20 text-telegram-subtext border border-telegram-border/30'
+                  }`}
+                >
+                  Downloads ({downloadQueue.length})
+                </button>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {uploadQueue.length === 0 && downloadQueue.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 space-y-3 text-center px-6">
+                <div className="p-4 rounded-2xl bg-telegram-primary/10 text-telegram-primary border border-telegram-primary/20">
+                  <Download className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-telegram-text">No Transfers</h3>
+                <p className="text-xs text-telegram-subtext max-w-xs leading-relaxed">
+                  Files you upload or download will appear here with live progress, speed, and status.
+                </p>
+                <button
+                  onClick={handleManualUpload}
+                  className="mt-2 flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-telegram-primary text-black active:scale-95 transition-all shadow-md"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  Upload a File
+                </button>
+              </div>
+            )}
+
+            {/* Transfers List */}
+            <div className="space-y-2.5">
+              {/* Upload items */}
+              {(transfersFilter === 'all' || transfersFilter === 'uploads') &&
+                uploadQueue.map((item) => {
+                  const filename = (item.url || item.path || 'file').split('/').pop()?.split('\\').pop() || 'upload';
+                  const isActive = item.status === 'uploading' || item.status === 'downloading' || item.status === 'pending';
+                  const isDone = item.status === 'success';
+                  const isFailed = item.status === 'error';
+                  const isCancelled = item.status === 'cancelled';
+
+                  return (
+                    <div
+                      key={`upload-${item.id}`}
+                      className="p-3.5 rounded-2xl bg-telegram-hover/15 border border-telegram-border/30 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={`p-2 rounded-xl flex-shrink-0 ${
+                            isDone ? 'bg-green-500/15 text-green-400' :
+                            isFailed ? 'bg-red-500/15 text-red-400' :
+                            isCancelled ? 'bg-gray-500/15 text-gray-400' :
+                            'bg-blue-500/15 text-blue-400'
+                          }`}>
+                            <UploadCloud className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-telegram-text truncate leading-snug">{filename}</p>
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-telegram-subtext">
+                              <span>Upload</span>
+                              {item.totalBytes ? (
+                                <>
+                                  <span>•</span>
+                                  <span>{formatBytes(item.uploadedBytes || 0)} / {formatBytes(item.totalBytes)}</span>
+                                </>
+                              ) : null}
+                              {isActive && item.speedBytesPerSec ? (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-emerald-400 font-mono">{formatBytes(item.speedBytesPerSec)}/s</span>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status Badge & Actions */}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {isActive && (
+                            <button
+                              onClick={() => cancelUploadItem(item.id)}
+                              className="p-1.5 rounded-lg bg-telegram-hover/30 hover:bg-telegram-hover/60 text-telegram-subtext hover:text-red-400 transition"
+                              title="Cancel"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {(isFailed || isCancelled) && (
+                            <button
+                              onClick={() => retryUploadItem(item.id)}
+                              className="p-1.5 rounded-lg bg-telegram-primary/15 hover:bg-telegram-primary/25 text-telegram-primary transition"
+                              title="Retry"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                            isDone ? 'bg-green-500/15 text-green-400' :
+                            isFailed ? 'bg-red-500/15 text-red-400' :
+                            isCancelled ? 'bg-gray-500/20 text-gray-400' :
+                            item.status === 'downloading' ? 'bg-cyan-500/15 text-cyan-400 animate-pulse' :
+                            'bg-blue-500/15 text-blue-400 animate-pulse'
+                          }`}>
+                            {isDone ? 'Complete' :
+                             isFailed ? 'Failed' :
+                             isCancelled ? 'Cancelled' :
+                             item.status === 'downloading' ? `Caching ${item.progress ?? 0}%` :
+                             item.status === 'uploading' ? `Uploading ${item.progress ?? 0}%` : 'Queued'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      {isActive && (
+                        <div className="h-1.5 w-full bg-telegram-border/40 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              item.status === 'downloading' ? 'bg-cyan-500' : 'bg-telegram-primary'
+                            }`}
+                            style={{ width: `${Math.max(5, item.progress || 0)}%` }}
+                          />
+                        </div>
+                      )}
+                      {isFailed && item.error && (
+                        <p className="text-[10px] text-red-400/80 truncate px-1">{item.error}</p>
+                      )}
+                    </div>
+                  );
+                })}
+
+              {/* Download items */}
+              {(transfersFilter === 'all' || transfersFilter === 'downloads') &&
+                downloadQueue.map((item) => {
+                  const isActive = item.status === 'downloading' || item.status === 'pending';
+                  const isDone = item.status === 'success';
+                  const isFailed = item.status === 'error';
+                  const isCancelled = item.status === 'cancelled';
+
+                  return (
+                    <div
+                      key={`download-${item.id}`}
+                      className="p-3.5 rounded-2xl bg-telegram-hover/15 border border-telegram-border/30 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={`p-2 rounded-xl flex-shrink-0 ${
+                            isDone ? 'bg-green-500/15 text-green-400' :
+                            isFailed ? 'bg-red-500/15 text-red-400' :
+                            isCancelled ? 'bg-gray-500/15 text-gray-400' :
+                            'bg-amber-500/15 text-amber-400'
+                          }`}>
+                            <Download className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-telegram-text truncate leading-snug">{item.filename}</p>
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-telegram-subtext">
+                              <span>Download</span>
+                              {item.totalBytes ? (
+                                <>
+                                  <span>•</span>
+                                  <span>{formatBytes(item.downloadedBytes || 0)} / {formatBytes(item.totalBytes)}</span>
+                                </>
+                              ) : null}
+                              {isActive && item.speedBytesPerSec ? (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-emerald-400 font-mono">{formatBytes(item.speedBytesPerSec)}/s</span>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status Badge & Actions */}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {isActive && (
+                            <button
+                              onClick={() => cancelDownloadItem(item.id)}
+                              className="p-1.5 rounded-lg bg-telegram-hover/30 hover:bg-telegram-hover/60 text-telegram-subtext hover:text-red-400 transition"
+                              title="Cancel"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {(isFailed || isCancelled) && (
+                            <button
+                              onClick={() => retryDownloadItem(item.id)}
+                              className="p-1.5 rounded-lg bg-telegram-primary/15 hover:bg-telegram-primary/25 text-telegram-primary transition"
+                              title="Retry"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                            isDone ? 'bg-green-500/15 text-green-400' :
+                            isFailed ? 'bg-red-500/15 text-red-400' :
+                            isCancelled ? 'bg-gray-500/20 text-gray-400' :
+                            'bg-amber-500/15 text-amber-400 animate-pulse'
+                          }`}>
+                            {isDone ? 'Complete' :
+                             isFailed ? 'Failed' :
+                             isCancelled ? 'Cancelled' :
+                             item.status === 'downloading' ? `Downloading ${item.progress ?? 0}%` : 'Queued'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      {isActive && (
+                        <div className="h-1.5 w-full bg-telegram-border/40 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-300 bg-amber-500"
+                            style={{ width: `${Math.max(5, item.progress || 0)}%` }}
+                          />
+                        </div>
+                      )}
+                      {isFailed && item.error && (
+                        <p className="text-[10px] text-red-400/80 truncate px-1">{item.error}</p>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
           </div>
         )}
 
@@ -896,7 +1219,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
       {/* Slide-out Sidebar Drawer Panel */}
       <div
-        className={`fixed top-0 left-0 bottom-0 w-[280px] bg-telegram-surface border-r border-telegram-border/60 z-[110] shadow-2xl flex flex-col pt-[calc(1rem+env(safe-area-inset-top,24px))] pb-28 transition-transform duration-300 ease-out transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed top-0 left-0 bottom-0 w-[280px] max-w-[85vw] bg-telegram-surface border-r border-telegram-border/60 z-[110] shadow-2xl flex flex-col pt-[calc(1rem+env(safe-area-inset-top,24px))] pb-[calc(1.5rem+env(safe-area-inset-bottom,16px))] transition-transform duration-300 ease-out transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         onClick={e => e.stopPropagation()}
       >
@@ -1007,7 +1330,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       )}
 
       {/* Floating Bottom Nav Bar */}
-      <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} isAndroid={isAndroid} />
+      <BottomNavBar activeTab={activeTab} setActiveTab={setActiveTab} isAndroid={isAndroid} activeTransfersCount={totalActiveTransfers} />
 
      
 
@@ -1060,22 +1383,23 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
           onClick={() => setBulkShareLinks(null)}
         >
           <div
-            className="w-full max-w-lg bg-[#1c1c1e] border border-white/10 rounded-t-3xl p-5 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[70vh] flex flex-col"
+            className="w-full max-w-lg bg-telegram-surface border border-telegram-border/40 rounded-t-3xl p-5 shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[75vh] flex flex-col"
+            style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Drag handle */}
             <div className="flex justify-center mb-4">
-              <div className="w-10 h-1 rounded-full bg-white/20" />
+              <div className="w-10 h-1 rounded-full bg-telegram-border/60" />
             </div>
 
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <h3 className="text-sm font-bold text-telegram-text flex items-center gap-2">
                 <Link className="w-4 h-4 text-telegram-primary" />
                 {bulkShareLinks.length} Share Link{bulkShareLinks.length !== 1 ? 's' : ''}
               </h3>
               <button
                 onClick={() => setBulkShareLinks(null)}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-telegram-subtext"
+                className="p-1.5 rounded-lg hover:bg-telegram-hover text-telegram-subtext"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1093,22 +1417,22 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   return (
                     <div
                       key={file.id}
-                      className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-2"
+                      className="p-3 rounded-xl bg-telegram-hover/20 border border-telegram-border/30 space-y-2"
                     >
-                      <p className="text-xs font-semibold text-white truncate">{file.name}</p>
+                      <p className="text-xs font-semibold text-telegram-text truncate">{file.name}</p>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           readOnly
                           value={link}
-                          className="flex-1 bg-black/30 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] text-telegram-subtext focus:outline-none select-all truncate"
+                          className="flex-1 bg-telegram-bg border border-telegram-border rounded-lg px-2.5 py-1.5 text-[11px] text-telegram-text focus:outline-none select-all truncate"
                         />
                         <button
                           onClick={() => handleCopyBulkLink(link)}
                           className={`px-2.5 py-1.5 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
                             isCopied
                               ? 'bg-emerald-500 border-emerald-500 text-white'
-                              : 'bg-white/10 border border-white/10 text-telegram-subtext hover:bg-white/20'
+                              : 'bg-telegram-hover/40 border border-telegram-border text-telegram-subtext hover:text-telegram-text'
                           }`}
                         >
                           {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1130,7 +1454,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
             <button
               onClick={() => setBulkShareLinks(null)}
-              className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold bg-white/5 text-telegram-subtext hover:bg-white/10 border border-white/5 transition-all duration-200 active:scale-[0.98] flex-shrink-0"
+              className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold bg-telegram-hover/20 text-telegram-subtext hover:text-telegram-text hover:bg-telegram-hover/40 border border-telegram-border/30 transition-all duration-200 active:scale-[0.98] flex-shrink-0"
             >
               Done
             </button>

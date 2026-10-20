@@ -12,17 +12,31 @@
       "identifier": "fs:allow-read",
       "allow": [
         { "path": "$APPCACHE/**" },
-        { "path": "$APPDATA/**" }
+        { "path": "$APPDATA/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$VIDEO/**" },
+        { "path": "$AUDIO/**" }
       ]
     },
     {
       "identifier": "fs:allow-write",
       "allow": [
         { "path": "$APPCACHE/**" },
-        { "path": "$APPDATA/**" }
+        { "path": "$APPDATA/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$PICTURE/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$VIDEO/**" },
+        { "path": "$AUDIO/**" }
       ]
     },
     "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
     "opener:default",
     "shell:allow-open"
   ]

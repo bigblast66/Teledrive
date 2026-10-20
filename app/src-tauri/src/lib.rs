@@ -368,6 +368,35 @@ fn cmd_remove_cached_path(_uri: String) -> Result<(), String> {
     Ok(()) // No-op on desktop
 }
 
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn cmd_request_android_permissions() -> Result<bool, String> {
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
+        .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
+    let mut env = vm.attach_current_thread()
+        .map_err(|e| format!("Failed to attach thread: {}", e))?;
+
+    if let Some(main_class) = crate::jni_cache::get_main_activity_jclass() {
+        let _ = env.call_static_method(
+            &main_class,
+            "requestStoragePermissions",
+            "()V",
+            &[],
+        );
+        let _ = env.exception_clear();
+        Ok(true)
+    } else {
+        Err("MainActivity reference not cached".to_string())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn cmd_request_android_permissions() -> Result<bool, String> {
+    Ok(true)
+}
+
 /// Gather system diagnostics and environment info for debugging.
 /// Returns a formatted string suitable for copying to clipboard.
 #[tauri::command]
@@ -727,6 +756,7 @@ pub fn run() {
             cmd_get_pending_share_count,
             cmd_list_cached_files,
             cmd_remove_cached_path,
+            cmd_request_android_permissions,
             cmd_get_system_diagnostics,
             commands::cmd_get_video_metadata,
             commands::cmd_get_video_metadata_batch,

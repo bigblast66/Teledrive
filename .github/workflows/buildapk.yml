@@ -1,0 +1,85 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - '.github/workflows/buildapk.yml'
+
+jobs:
+  build-android:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: |
+            aarch64-linux-android
+            armv7-linux-androideabi
+            i686-linux-android
+            x86_64-linux-android
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Install npm packages
+        working-directory: app
+        run: npm ci
+
+      - name: Build Android APK
+        working-directory: app
+        run: npm run tauri android build -- --apk
+
+      - name: Sign APK (if keystore secret exists)
+        id: sign
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE }}" ]; then
+            echo "Signing APK with provided keystore secret..."
+            echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 -d > release.jks
+            APK=$(find app/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n1)
+            BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -type d | sort -V | tail -n1)
+            "$BUILD_TOOLS/apksigner" sign \
+              --ks release.jks \
+              --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
+              --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+              --key-pass pass:${{ secrets.ANDROID_KEY_PASSWORD }} \
+              --out TelegramDrive-signed.apk \
+              "$APK"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No keystore secret found, skipping signing."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-drive-apk
+          path: |
+            TelegramDrive-signed.apk
+            app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

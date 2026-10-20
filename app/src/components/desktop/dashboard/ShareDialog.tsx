@@ -93,8 +93,8 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-telegram-surface border border-telegram-border rounded-xl w-[420px] shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-telegram-surface border border-telegram-border rounded-xl w-full max-w-[420px] shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-telegram-border flex justify-between items-center">
                     <h3 className="text-telegram-text font-medium flex items-center gap-2">
                         <Link className="w-5 h-5 text-telegram-primary" />

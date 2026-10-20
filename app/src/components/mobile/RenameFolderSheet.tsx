@@ -56,7 +56,8 @@ export function RenameFolderSheet({ folderId, currentName, onRename, onClose }: 
             onClick={onClose}
         >
             <div
-                className="w-full max-w-lg bg-telegram-surface border border-telegram-border/40 rounded-t-3xl p-5 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-300"
+                className="w-full max-w-lg bg-telegram-surface border border-telegram-border/40 rounded-t-3xl p-5 shadow-2xl animate-in slide-in-from-bottom duration-300"
+                style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* Drag handle */}
