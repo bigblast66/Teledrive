@@ -94,7 +94,7 @@ jobs:
   
       - name: Build APK
         working-directory: app
-        run: npm run tauri android build
+        run: npm run tauri android build -- --apk true --ci
   
       - name: Decode keystore
         run: |

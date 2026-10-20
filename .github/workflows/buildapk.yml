@@ -56,7 +56,7 @@ jobs:
 
       - name: Build Android APK
         working-directory: app
-        run: npm run tauri android build -- --apk
+        run: npm run tauri android build -- --apk true --ci
 
       - name: Sign APK
         run: |
