@@ -198,7 +198,8 @@ pub fn restart_api_server(_app: &tauri::AppHandle) {
 fn cmd_open_file_externally(path: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let ctx = ndk_context::android_context();
+        let ctx = crate::jni_cache::get_android_context()
+            .ok_or_else(|| "Android context not initialized".to_string())?;
         let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
             .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
         let mut env = vm.attach_current_thread()
@@ -261,7 +262,8 @@ fn cmd_open_file_externally(path: String, app_handle: tauri::AppHandle) -> Resul
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn cmd_get_pending_share_count() -> Result<i32, String> {
-    let ctx = ndk_context::android_context();
+    let ctx = crate::jni_cache::get_android_context()
+        .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
     let mut env = vm.attach_current_thread()
@@ -300,7 +302,8 @@ struct CachedFileEntry {
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn cmd_list_cached_files() -> Result<Vec<CachedFileEntry>, String> {
-    let ctx = ndk_context::android_context();
+    let ctx = crate::jni_cache::get_android_context()
+        .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
     let mut env = vm.attach_current_thread()
@@ -340,7 +343,8 @@ fn cmd_list_cached_files() -> Result<Vec<CachedFileEntry>, String> {
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn cmd_remove_cached_path(uri: String) -> Result<(), String> {
-    let ctx = ndk_context::android_context();
+    let ctx = crate::jni_cache::get_android_context()
+        .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
     let mut env = vm.attach_current_thread()
@@ -371,7 +375,8 @@ fn cmd_remove_cached_path(_uri: String) -> Result<(), String> {
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn cmd_request_android_permissions() -> Result<bool, String> {
-    let ctx = ndk_context::android_context();
+    let ctx = crate::jni_cache::get_android_context()
+        .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to resolve JVM: {}", e))?;
     let mut env = vm.attach_current_thread()
@@ -501,58 +506,7 @@ pub fn run() {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.with_webview(|webview| {
                             webview.jni_handle().exec(|env, context, _webview| {
-                                // 1. Initialize ndk-context with the JVM and Activity pointers
-                                if let Ok(vm) = env.get_java_vm() {
-                                    unsafe {
-                                        let _ = ndk_context::initialize_android_context(
-                                            vm.get_java_vm_pointer().cast(),
-                                            context.as_raw().cast(),
-                                        );
-                                    }
-                                    log::info!("JNI: Successfully initialized ndk-context globally.");
-                                } else {
-                                    log::error!("JNI: Failed to get JavaVM from JNIEnv");
-                                    return;
-                                }
-
-                                // 2. Cache ClassLoader and MainActivity class references
-                                //    Using the same JNI env avoids the race condition where
-                                //    ndk_context::android_context() was called before init completed.
-                                if let Ok(class_loader_val) = env.call_method(
-                                    &context,
-                                    "getClassLoader",
-                                    "()Ljava/lang/ClassLoader;",
-                                    &[],
-                                ) {
-                                    if let Ok(class_loader_obj) = class_loader_val.l() {
-                                        if let Ok(class_loader_global) = env.new_global_ref(&class_loader_obj) {
-                                            let _ = crate::jni_cache::set_class_loader(class_loader_global);
-                                        }
-
-                                        let class_name_jstr = match env.new_string("com.bigblast66.telegramdrive.MainActivity") {
-                                            Ok(s) => Some(s),
-                                            Err(e) => {
-                                                log::error!("JNI: Failed to create MainActivity class name string: {}", e);
-                                                None
-                                            }
-                                        };
-                                        if let Some(class_name_jstr) = class_name_jstr {
-                                            if let Ok(main_class_obj_val) = env.call_method(
-                                                &class_loader_obj,
-                                                "loadClass",
-                                                "(Ljava/lang/String;)Ljava/lang/Class;",
-                                                &[jni::objects::JValue::from(&class_name_jstr)],
-                                            ) {
-                                                if let Ok(main_class_obj) = main_class_obj_val.l() {
-                                                    if let Ok(main_class_global) = env.new_global_ref(main_class_obj) {
-                                                        let _ = crate::jni_cache::set_main_activity_class(main_class_global);
-                                                        log::info!("JNI: Successfully cached MainActivity class reference globally.");
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                crate::jni_cache::init_from_env_and_activity(env, &context);
                             });
                         });
                     }

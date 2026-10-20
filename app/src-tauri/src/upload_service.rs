@@ -1,7 +1,13 @@
 #[cfg(target_os = "android")]
 pub fn start_foreground_service() {
     log::info!("JNI: start_foreground_service called");
-    let ctx_obj = ndk_context::android_context();
+    let ctx_obj = match crate::jni_cache::get_android_context() {
+        Some(ctx) => ctx,
+        None => {
+            log::warn!("JNI: Android context not initialized yet in start_foreground_service");
+            return;
+        }
+    };
     if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx_obj.vm().cast()) } {
         if let Ok(mut env) = vm.attach_current_thread() {
             let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };
@@ -70,7 +76,13 @@ pub fn start_foreground_service() {
 #[cfg(target_os = "android")]
 pub fn stop_foreground_service() {
     log::info!("JNI: stop_foreground_service called");
-    let ctx_obj = ndk_context::android_context();
+    let ctx_obj = match crate::jni_cache::get_android_context() {
+        Some(ctx) => ctx,
+        None => {
+            log::warn!("JNI: Android context not initialized yet in stop_foreground_service");
+            return;
+        }
+    };
     if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx_obj.vm().cast()) } {
         if let Ok(mut env) = vm.attach_current_thread() {
             let ctx = unsafe { jni::objects::JObject::from_raw(ctx_obj.context().cast()) };

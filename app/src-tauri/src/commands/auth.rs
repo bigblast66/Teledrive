@@ -28,7 +28,7 @@ pub async fn ensure_client_initialized(
     #[cfg(target_os = "android")]
     {
         let mut count = 0;
-        while ndk_context::android_context().vm().is_null() || ndk_context::android_context().context().is_null() {
+        while !crate::jni_cache::is_initialized() {
             if count >= 200 { // 10 seconds timeout
                 return Err("Timeout waiting for Android JNI context initialization.".to_string());
             }

@@ -68,7 +68,8 @@ pub fn clean_android_path(raw_path: &str) -> String {
 #[cfg(target_os = "android")]
 pub fn copy_to_android_cache(raw_path: &str) -> Result<String, String> {
     log::info!("JNI copy_to_android_cache started for path: {}", raw_path);
-    let ctx_obj = ndk_context::android_context();
+    let ctx_obj = crate::jni_cache::get_android_context()
+        .ok_or_else(|| "Android context not initialized".to_string())?;
     let vm = unsafe { jni::JavaVM::from_raw(ctx_obj.vm().cast()) }
         .map_err(|e| format!("Failed to get JavaVM: {}", e))?;
     let mut env = vm.attach_current_thread()
@@ -1422,45 +1423,48 @@ pub async fn cmd_download_file(
         
         let jni_success = {
             let mut success = false;
-            let ctx = ndk_context::android_context();
-            if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
-                if let Ok(mut env) = vm.attach_current_thread() {
-                    if let Some(main_class) = crate::jni_cache::get_main_activity_jclass() {
-                        if let Ok(j_cache_path) = env.new_string(&actual_save_path) {
-                            if let Ok(j_file_name) = env.new_string(file_name) {
-                                if let Ok(j_mime_type) = env.new_string(mime_type) {
-                                    let call_res = env.call_static_method(
-                                        &main_class,
-                                        "saveFileToPublicDownloads",
-                                        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z",
-                                        &[
-                                            jni::objects::JValue::from(&j_cache_path),
-                                            jni::objects::JValue::from(&j_file_name),
-                                            jni::objects::JValue::from(&j_mime_type),
-                                        ],
-                                    );
-                                    
-                                    match call_res {
-                                        Ok(val) => {
-                                            if let Ok(b) = val.z() {
-                                                success = b;
+            if let Some(ctx) = crate::jni_cache::get_android_context() {
+                if let Ok(vm) = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) } {
+                    if let Ok(mut env) = vm.attach_current_thread() {
+                        if let Some(main_class) = crate::jni_cache::get_main_activity_jclass() {
+                            if let Ok(j_cache_path) = env.new_string(&actual_save_path) {
+                                if let Ok(j_file_name) = env.new_string(file_name) {
+                                    if let Ok(j_mime_type) = env.new_string(mime_type) {
+                                        let call_res = env.call_static_method(
+                                            &main_class,
+                                            "saveFileToPublicDownloads",
+                                            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z",
+                                            &[
+                                                jni::objects::JValue::from(&j_cache_path),
+                                                jni::objects::JValue::from(&j_file_name),
+                                                jni::objects::JValue::from(&j_mime_type),
+                                            ],
+                                        );
+                                        
+                                        match call_res {
+                                            Ok(val) => {
+                                                if let Ok(b) = val.z() {
+                                                    success = b;
+                                                }
                                             }
-                                        }
-                                        Err(e) => {
-                                            log::error!("JNI: saveFileToPublicDownloads call failed: {}", e);
-                                            if env.exception_check().unwrap_or(false) {
-                                                let _ = env.exception_describe();
-                                                let _ = env.exception_clear();
+                                            Err(e) => {
+                                                log::error!("JNI: saveFileToPublicDownloads call failed: {}", e);
+                                                if env.exception_check().unwrap_or(false) {
+                                                    let _ = env.exception_describe();
+                                                    let _ = env.exception_clear();
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
+                        } else {
+                            log::error!("JNI: MainActivity class reference was NOT cached globally!");
                         }
-                    } else {
-                        log::error!("JNI: MainActivity class reference was NOT cached globally!");
                     }
                 }
+            } else {
+                log::error!("JNI: Android context not initialized for downloads");
             }
             success
         };

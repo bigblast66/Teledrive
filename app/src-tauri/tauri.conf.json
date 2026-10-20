@@ -23,6 +23,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Telegram Drive",
         "width": 1200,
         "height": 800,

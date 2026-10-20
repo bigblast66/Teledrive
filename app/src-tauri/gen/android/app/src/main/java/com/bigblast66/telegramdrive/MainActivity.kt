@@ -43,9 +43,19 @@ class MainActivity : TauriActivity() {
 
         @Volatile
         var instance: MainActivity? = null
+        @Volatile
+        var appContext: android.content.Context? = null
 
         val uriCacheMap = ConcurrentHashMap<String, CachedFileEntry>()
         val pendingShareCount = AtomicInteger(0)
+
+        init {
+            try {
+                System.loadLibrary("app_lib")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.w(TAG, "libapp_lib not yet loaded in static init: ${e.message}")
+            }
+        }
 
         @JvmStatic
         fun requestStoragePermissions() {
@@ -91,7 +101,7 @@ class MainActivity : TauriActivity() {
 
         @JvmStatic
         fun saveFileToPublicDownloads(cachePath: String, fileName: String, mimeType: String): Boolean {
-            val context = instance ?: return false
+            val context = instance ?: appContext ?: return false
             val cacheFile = File(cachePath)
             if (!cacheFile.exists() || cacheFile.length() == 0L) {
                 Log.e(TAG, "Cache file does not exist or is empty: $cachePath")
@@ -147,7 +157,7 @@ class MainActivity : TauriActivity() {
 
         @JvmStatic
         fun openFileExternally(path: String, mimeType: String): Boolean {
-            val context = instance ?: return false
+            val context = instance ?: appContext ?: return false
             return try {
                 val file = File(path)
                 val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -206,12 +216,34 @@ class MainActivity : TauriActivity() {
         }
     }
 
+    private external fun nativeInit(activity: Any)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         instance = this
+        appContext = applicationContext
+        try {
+            nativeInit(this)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to call nativeInit: ${e.message}", e)
+        }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         handleShareIntent(intent)
         checkAndRequestPermissions()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            for (i in permissions.indices) {
+                val granted = grantResults.getOrNull(i) == PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "Permission ${permissions[i]}: ${if (granted) "GRANTED" else "DENIED"}")
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
