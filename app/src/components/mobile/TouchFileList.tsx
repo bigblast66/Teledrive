@@ -17,13 +17,15 @@ import {
   ArrowDown,
   LayoutGrid,
   List,
+  Play,
+  Music,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { FileTypeIcon } from '../shared/FileTypeIcon';
 import { ActionPopover, ActionItem } from './ActionPopover';
 import { TelegramFile, TelegramFolder } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
-import { isImageFile } from '../../utils';
+import { isImageFile, isVideoFile, isAudioFile } from '../../utils';
 
 type SortField = 'name' | 'size' | 'date';
 type SortDirection = 'asc' | 'desc';
@@ -59,11 +61,15 @@ function MobileGridCard({
   activeFolderId,
 }: MobileGridCardProps) {
   const isImg = isImageFile(file.name);
+  const isVid = isVideoFile(file.name);
+  const isAud = isAudioFile(file.name);
+  const isVisualMedia = isImg || isVid;
+
   const [thumb, setThumb] = useState<string | null>(() => thumbnailCache.get(file.id) || null);
   const [loadingThumb, setLoadingThumb] = useState(false);
 
   useEffect(() => {
-    if (!isImg || thumb || thumbnailCache.has(file.id)) return;
+    if (!isVisualMedia || thumb || thumbnailCache.has(file.id)) return;
     let cancelled = false;
     setLoadingThumb(true);
 
@@ -85,7 +91,7 @@ function MobileGridCard({
     return () => {
       cancelled = true;
     };
-  }, [file.id, isImg, activeFolderId, thumb]);
+  }, [file.id, isVisualMedia, activeFolderId, thumb]);
 
   return (
     <div
@@ -112,12 +118,38 @@ function MobileGridCard({
     >
       <div className="relative w-full aspect-square bg-telegram-hover/15 flex items-center justify-center overflow-hidden">
         {thumb ? (
-          <img
-            src={thumb}
-            alt={file.name}
-            className="w-full h-full object-cover transition-opacity duration-200"
-            loading="lazy"
-          />
+          <>
+            <img
+              src={thumb}
+              alt={file.name}
+              className="w-full h-full object-cover transition-opacity duration-200"
+              loading="lazy"
+            />
+            {isVid && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/10">
+                <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center text-white shadow-xl ring-1 ring-white/20">
+                  <Play className="w-4 h-4 fill-white ml-0.5" />
+                </div>
+              </div>
+            )}
+          </>
+        ) : isVid ? (
+          <div className="flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-indigo-500/10 to-purple-500/10">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center mb-1 text-indigo-400 shadow-sm">
+              <Play className="w-6 h-6 fill-indigo-400/60 ml-0.5" />
+            </div>
+            {loadingThumb && (
+              <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px] flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-telegram-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </div>
+        ) : isAud ? (
+          <div className="flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-amber-500/10 to-orange-500/10">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mb-1 text-amber-400 shadow-sm">
+              <Music className="w-6 h-6" />
+            </div>
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center p-4">
             <div className="transform scale-125 mb-1">
@@ -281,10 +313,11 @@ export function TouchFileList({
   // Build action items for a file's popover menu
   const buildFileActions = useCallback(
     (file: TelegramFile): ActionItem[] => {
+      const isMedia = isVideoFile(file.name) || isAudioFile(file.name);
       const actions: ActionItem[] = [
         {
-          label: 'Preview',
-          icon: <Eye className="w-4 h-4" />,
+          label: isMedia ? 'Play' : 'Preview',
+          icon: isMedia ? <Play className="w-4 h-4" /> : <Eye className="w-4 h-4" />,
           onClick: () => onPreview(file),
         },
         {

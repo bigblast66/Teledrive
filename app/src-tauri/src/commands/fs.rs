@@ -953,28 +953,53 @@ async fn cmd_upload_file_inner(
         //deletet temp encrypted file
         let _ = tokio::fs::remove_file(&path).await;
 
-         // --- thumbnail hook: only for images ---
+        // --- thumbnail hook: images and videos ---
         let ext = std::path::Path::new(&original_path)
             .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        if ["jpg", "jpeg", "png", "webp"].contains(&ext.as_str()) {
-            if let Some(thumb_bytes) = crate::crypto::generate_thumbnail(&original_path) {
-                let raw_thumb_path = format!("{}.thumb.raw", original_path);
-                let enc_thumb_path = format!("{}.thumb.enc", original_path);
-                let _ = tokio::fs::write(&raw_thumb_path, &thumb_bytes).await;
-                let thumb_encrypt_result = {
-                    let src = raw_thumb_path.clone();
-                    let dst = enc_thumb_path.clone();
-                    tokio::task::spawn_blocking(move || {
-                        crate::crypto::encrypt_file(&src, &dst, &crate::crypto::dev_key())
-                    }).await
+        let is_img = ["jpg", "jpeg", "png", "webp"].contains(&ext.as_str());
+        let is_vid = ["mp4", "mkv", "mov", "avi", "webm", "m4v"].contains(&ext.as_str());
+
+        let thumb_bytes = if is_img {
+            crate::crypto::generate_thumbnail(&original_path)
+        } else if is_vid {
+            if let Some(ffmpeg) = crate::transcode::detect_ffmpeg(&app_handle).await {
+                let temp_thumb = format!("{}.thumb_raw.jpg", original_path);
+                let status = tokio::process::Command::new(&ffmpeg)
+                    .args(&["-ss", "00:00:01", "-i", &original_path, "-vframes", "1", "-vf", "scale=320:-1", "-y", &temp_thumb])
+                    .output()
+                    .await;
+                let bytes = if status.map_or(false, |s| s.status.success()) {
+                    tokio::fs::read(&temp_thumb).await.ok()
+                } else {
+                    None
                 };
-                let _ = tokio::fs::remove_file(&raw_thumb_path).await;
-                if let Err(e) = &thumb_encrypt_result {
-                    log::warn!("thumbnail encrypt task panicked: {e}");
-                } else if let Ok(Err(e)) = &thumb_encrypt_result {
-                    log::warn!("thumbnail encryption failed, skipping thumbnail: {e}");
-                }
-                if matches!(thumb_encrypt_result, Ok(Ok(()))) {
+                let _ = tokio::fs::remove_file(&temp_thumb).await;
+                bytes
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(thumb_bytes) = thumb_bytes {
+            let raw_thumb_path = format!("{}.thumb.raw", original_path);
+            let enc_thumb_path = format!("{}.thumb.enc", original_path);
+            let _ = tokio::fs::write(&raw_thumb_path, &thumb_bytes).await;
+            let thumb_encrypt_result = {
+                let src = raw_thumb_path.clone();
+                let dst = enc_thumb_path.clone();
+                tokio::task::spawn_blocking(move || {
+                    crate::crypto::encrypt_file(&src, &dst, &crate::crypto::dev_key())
+                }).await
+            };
+            let _ = tokio::fs::remove_file(&raw_thumb_path).await;
+            if let Err(e) = &thumb_encrypt_result {
+                log::warn!("thumbnail encrypt task panicked: {e}");
+            } else if let Ok(Err(e)) = &thumb_encrypt_result {
+                log::warn!("thumbnail encryption failed, skipping thumbnail: {e}");
+            }
+            if matches!(thumb_encrypt_result, Ok(Ok(()))) {
                 if let Ok(encrypted_thumb) = tokio::fs::read(&enc_thumb_path).await {
                     let mut thumb_reader = std::io::Cursor::new(&encrypted_thumb);
                     if let Ok(uploaded_thumb) = client.upload_stream(&mut thumb_reader, encrypted_thumb.len(), "thumb.enc".to_string()).await {
@@ -983,7 +1008,6 @@ async fn cmd_upload_file_inner(
                     }
                 }
                 let _ = tokio::fs::remove_file(&enc_thumb_path).await;
-                }
             }
         }
         // --- end hook ---

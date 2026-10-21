@@ -18,7 +18,7 @@ import { useFileUpload } from '../../hooks/useFileUpload';
 import { useFileDownload } from '../../hooks/useFileDownload';
 import { useFileOperations } from '../../hooks/useFileOperations';
 import { formatBytes, isMediaFile, isPdfFile, isImageFile, isTextFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
-import { MediaPlayer } from '../desktop/dashboard/MediaPlayer';
+import { MobileMediaPlayer } from './MobileMediaPlayer';
 import { PdfViewer } from '../desktop/dashboard/PdfViewer';
 import { MobilePreviewModal } from './MobilePreviewModal';
 import { TextViewer } from '../desktop/dashboard/TextViewer';
@@ -1362,14 +1362,14 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
 
       {/* Previews Overlays (Media, PDF & Images) */}
       {playingFile && (
-        <div className="fixed inset-0 z-[100] bg-black/90">
-          <MediaPlayer
-            key={playingFile.id}
-            file={playingFile}
-            onClose={() => setPlayingFile(null)}
-            activeFolderId={activeFolderId}
-          />
-        </div>
+        <MobileMediaPlayer
+          key={playingFile.id}
+          file={playingFile}
+          onClose={() => setPlayingFile(null)}
+          activeFolderId={activeFolderId}
+          onDownload={handleDownload}
+          onShare={setShareFile}
+        />
       )}
       {pdfFile && (
         <div className="fixed inset-0 z-[100] bg-telegram-bg">

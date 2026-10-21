@@ -11,6 +11,7 @@ use crate::commands::utils::resolve_peer;
 
 /// Supported image file extensions for thumbnails.
 /// Shared between Tauri commands and the REST API cache cleanup.
+pub const THUMB_MSG_MARKER: &str = "TGDRIVE_THUMB_V1";
 pub const THUMBNAIL_EXTS: &[&str] = &["jpg", "png", "gif", "webp"];
 
 const PREVIEW_CACHE_MAX_FILES: usize = 30;
@@ -481,17 +482,6 @@ pub async fn cmd_get_thumbnail(
     let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
 
     let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
-
-    // Fetch the companion thumbnail message (always sent immediately after the real file)
-    let thumb_msg_id = message_id + 1;
-    let thumb_messages = client.get_messages_by_id(&peer, &[thumb_msg_id])
-        .await.map_err(|e| e.to_string())?;
-
-    let media = match thumb_messages.into_iter().flatten().next().and_then(|m| m.media()) {
-        Some(m) => m,
-        None => return Ok("".to_string()),
-    };
-
     let save_path = cache_dir.join(format!("{}_{}.jpg", folder_key, message_id));
 
     // Early-exit: another concurrent request may have already cached this
@@ -502,69 +492,119 @@ pub async fn cmd_get_thumbnail(
         }
     }
 
-    let unique_id = rand::rng().random::<u64>();
-    let part_path = save_path.with_extension(format!("jpg_{}.part", unique_id));
-    let enc_path = save_path.with_extension(format!("jpg_{}.enc", unique_id));
-
-    // Attempt 1: download with the reference we already have
-    let mut download_ok = download_to_file(&client, &media, &enc_path).await.is_ok();
-
-    // Attempt 2: file reference may have expired — re-fetch the message for a fresh one
-    if !download_ok {
-        let _ = tokio::fs::remove_file(&enc_path).await;
-        if let Ok(fresh_messages) = client.get_messages_by_id(&peer, &[thumb_msg_id]).await {
-            if let Some(fresh_media) = fresh_messages.into_iter().flatten().next().and_then(|m| m.media()) {
-                download_ok = download_to_file(&client, &fresh_media, &enc_path).await.is_ok();
+    // 1. Try companion thumbnail message (always sent immediately after the real file when encrypted)
+    let thumb_msg_id = message_id + 1;
+    let mut companion_media: Option<Media> = None;
+    if let Ok(thumb_messages) = client.get_messages_by_id(&peer, &[thumb_msg_id]).await {
+        if let Some(Some(thumb_msg)) = thumb_messages.into_iter().next() {
+            if thumb_msg.text() == THUMB_MSG_MARKER {
+                companion_media = thumb_msg.media();
             }
         }
     }
 
-    if !download_ok {
-        let _ = tokio::fs::remove_file(&enc_path).await;
-        return Ok("".to_string());
-    }
+    if let Some(media) = companion_media {
+        let unique_id = rand::rng().random::<u64>();
+        let part_path = save_path.with_extension(format!("jpg_{}.part", unique_id));
+        let enc_path = save_path.with_extension(format!("jpg_{}.enc", unique_id));
 
-    {
-        let src = enc_path.to_str().ok_or("invalid encrypted path")?.to_string();
-        let dst = part_path.to_str().ok_or("invalid part path")?.to_string();
-        let result = tokio::task::spawn_blocking(move || {
-            crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
-        })
-        .await
-        .map_err(|e| format!("decryption task panicked: {e}"))?;
-        if let Err(e) = result {
+        // Attempt 1: download with the reference we already have
+        let mut download_ok = download_to_file(&client, &media, &enc_path).await.is_ok();
+
+        // Attempt 2: file reference may have expired — re-fetch the message for a fresh one
+        if !download_ok {
             let _ = tokio::fs::remove_file(&enc_path).await;
-            return Err(e);
+            if let Ok(fresh_messages) = client.get_messages_by_id(&peer, &[thumb_msg_id]).await {
+                if let Some(fresh_media) = fresh_messages.into_iter().flatten().next().and_then(|m| m.media()) {
+                    download_ok = download_to_file(&client, &fresh_media, &enc_path).await.is_ok();
+                }
+            }
         }
-    }
-    let _ = tokio::fs::remove_file(&enc_path).await;
 
-    // Atomically rename part file to final path (Ok = we won the race,
-    // NotFound = a concurrent request already renamed theirs — either way, read save_path)
-    match tokio::fs::rename(&part_path, &save_path).await {
-        Ok(_) | Err(_) => {
-            if let Ok(bytes) = tokio::fs::read(&save_path).await {
-                let b64 = general_purpose::STANDARD.encode(&bytes);
-                let _ = tokio::fs::remove_file(&part_path).await;
-                return Ok(format!("data:image/jpeg;base64,{}", b64));
+        if download_ok {
+            let src = enc_path.to_str().unwrap_or_default().to_string();
+            let dst = part_path.to_str().unwrap_or_default().to_string();
+            let result = tokio::task::spawn_blocking(move || {
+                crate::crypto::decrypt_file(&src, &dst, &crate::crypto::dev_key())
+            })
+            .await;
+            let _ = tokio::fs::remove_file(&enc_path).await;
+
+            if let Ok(Ok(())) = result {
+                if tokio::fs::rename(&part_path, &save_path).await.is_ok() {
+                    if let Ok(bytes) = tokio::fs::read(&save_path).await {
+                        let b64 = general_purpose::STANDARD.encode(&bytes);
+                        prune_thumbnail_cache(cache_dir.clone()).await;
+                        return Ok(format!("data:image/jpeg;base64,{}", b64));
+                    }
+                }
             }
             let _ = tokio::fs::remove_file(&part_path).await;
+        } else {
+            let _ = tokio::fs::remove_file(&enc_path).await;
         }
     }
 
-    match tokio::fs::rename(&part_path, &save_path).await {
-        Ok(_) | Err(_) => {
-            if let Ok(bytes) = tokio::fs::read(&save_path).await {
-                let b64 = general_purpose::STANDARD.encode(&bytes);
-                let _ = tokio::fs::remove_file(&part_path).await;
-                prune_thumbnail_cache(cache_dir.clone()).await; // NEW
-                return Ok(format!("data:image/jpeg;base64,{}", b64));
+    // 2. Fallback: Check if the message itself has native Telegram thumbnails (Videos, Photos, Documents)
+    if let Ok(orig_messages) = client.get_messages_by_id(&peer, &[message_id]).await {
+        if let Some(Some(msg)) = orig_messages.into_iter().next() {
+            if let Some(media) = msg.media() {
+                let thumbs = match &media {
+                    Media::Photo(p) => p.thumbs().to_vec(),
+                    Media::Document(d) => d.thumbs().to_vec(),
+                    _ => vec![],
+                };
+                if let Some(thumb) = thumbs.iter().filter(|t| t.size() > 0).max_by_key(|t| t.size()) {
+                    let unique_id = rand::rng().random::<u64>();
+                    let part_path = save_path.with_extension(format!("jpg_{}.part", unique_id));
+                    if client.download_media(thumb, &part_path).await.is_ok() {
+                        let _ = tokio::fs::rename(&part_path, &save_path).await;
+                        if let Ok(bytes) = tokio::fs::read(&save_path).await {
+                            let b64 = general_purpose::STANDARD.encode(&bytes);
+                            prune_thumbnail_cache(cache_dir.clone()).await;
+                            return Ok(format!("data:image/jpeg;base64,{}", b64));
+                        }
+                    }
+                    let _ = tokio::fs::remove_file(&part_path).await;
+                }
             }
-            let _ = tokio::fs::remove_file(&part_path).await;
         }
     }
 
     Ok("".to_string())
+}
+
+/// Save a client-generated thumbnail (e.g. video frame captured on canvas) to thumbnail cache.
+#[tauri::command]
+pub async fn cmd_save_thumbnail(
+    message_id: i32,
+    folder_id: Option<i64>,
+    base64_data: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let cache_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e: tauri::Error| e.to_string())?
+        .join("thumbnails");
+    if tokio::fs::metadata(&cache_dir).await.is_err() {
+        let _ = tokio::fs::create_dir_all(&cache_dir).await;
+    }
+    let folder_key = folder_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "home".to_string());
+    let save_path = cache_dir.join(format!("{}_{}.jpg", folder_key, message_id));
+
+    let b64_clean = if let Some(idx) = base64_data.find(',') {
+        &base64_data[idx + 1..]
+    } else {
+        &base64_data
+    };
+
+    if let Ok(bytes) = general_purpose::STANDARD.decode(b64_clean) {
+        let _ = tokio::fs::write(&save_path, bytes).await;
+    }
+    Ok(())
 }
 
 /// Delete stale preview cache entries for a specific message in a specific folder.
