@@ -1,4 +1,4 @@
-use tauri::{State, Emitter};
+use tauri::{State, Emitter, Manager};
 use std::sync::Arc;
 use grammers_client::types::{Media, Peer};
 use grammers_client::InputMessage;
@@ -943,7 +943,8 @@ async fn cmd_upload_file_inner(
 
     for attempt in 0..=max_retries {
         match client.send_message(&peer, message.clone()).await {
-            Ok(_) => {
+            Ok(sent_msg) => {
+                let file_msg_id = sent_msg.id();
                 // Bandwidth was already reserved by try_reserve_up at start
         if !tid.is_empty() {
             let _ = app_handle.emit("upload-progress", ProgressPayload {
@@ -962,27 +963,43 @@ async fn cmd_upload_file_inner(
         let thumb_bytes = if is_img {
             crate::crypto::generate_thumbnail(&original_path)
         } else if is_vid {
-            if let Some(ffmpeg) = crate::transcode::detect_ffmpeg(&app_handle).await {
-                let temp_thumb = format!("{}.thumb_raw.jpg", original_path);
-                let status = tokio::process::Command::new(&ffmpeg)
-                    .args(&["-ss", "00:00:01", "-i", &original_path, "-vframes", "1", "-vf", "scale=320:-1", "-y", &temp_thumb])
-                    .output()
-                    .await;
-                let bytes = if status.map_or(false, |s| s.status.success()) {
-                    tokio::fs::read(&temp_thumb).await.ok()
+            #[cfg(target_os = "android")]
+            {
+                crate::jni_cache::extract_video_thumbnail(&app_handle, &original_path)
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                if let Some(ffmpeg) = crate::transcode::detect_ffmpeg(&app_handle).await {
+                    let temp_thumb = format!("{}.thumb_raw.jpg", original_path);
+                    let status = tokio::process::Command::new(&ffmpeg)
+                        .args(&["-ss", "00:00:01", "-i", &original_path, "-vframes", "1", "-vf", "scale=320:-1", "-y", &temp_thumb])
+                        .output()
+                        .await;
+                    let bytes = if status.map_or(false, |s| s.status.success()) {
+                        tokio::fs::read(&temp_thumb).await.ok()
+                    } else {
+                        None
+                    };
+                    let _ = tokio::fs::remove_file(&temp_thumb).await;
+                    bytes
                 } else {
                     None
-                };
-                let _ = tokio::fs::remove_file(&temp_thumb).await;
-                bytes
-            } else {
-                None
+                }
             }
         } else {
             None
         };
 
         if let Some(thumb_bytes) = thumb_bytes {
+            // Save immediately to local thumbnail cache for instant zero-delay display
+            let folder_key = folder_id.map(|id| id.to_string()).unwrap_or_else(|| "home".to_string());
+            if let Ok(thumb_dir) = app_handle.path().app_data_dir().map(|d| d.join("thumbnails")) {
+                let _ = tokio::fs::create_dir_all(&thumb_dir).await;
+                let local_thumb_path = thumb_dir.join(format!("{}_{}.jpg", folder_key, file_msg_id));
+                let _ = tokio::fs::write(&local_thumb_path, &thumb_bytes).await;
+                log::info!("Cached local video/image thumbnail for msg {}: {:?}", file_msg_id, local_thumb_path);
+            }
+
             let raw_thumb_path = format!("{}.thumb.raw", original_path);
             let enc_thumb_path = format!("{}.thumb.enc", original_path);
             let _ = tokio::fs::write(&raw_thumb_path, &thumb_bytes).await;

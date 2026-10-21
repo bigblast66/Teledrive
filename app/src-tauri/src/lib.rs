@@ -65,6 +65,7 @@ pub mod jni_cache;
 pub mod transcode;
 pub mod fmp4_remux;
 pub mod mp4_utils;
+pub mod mobile_streaming;
 
 
 /// Single source of truth for the Actix streaming server port.
@@ -615,7 +616,13 @@ pub fn run() {
             }
             #[cfg(target_os = "android")]
             {
-                log::info!("Streaming server disabled on Android (Actix runtime conflict avoidance).");
+                let state = Arc::new(app.state::<TelegramState>().inner().clone());
+                let token_for_server = stream_token.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = mobile_streaming::start_mobile_streaming_server(state, STREAM_PORT, token_for_server).await {
+                        log::error!("Mobile streaming server error: {}", e);
+                    }
+                });
             }
 
             // Start API server if enabled in settings

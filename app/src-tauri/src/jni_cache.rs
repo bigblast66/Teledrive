@@ -148,3 +148,27 @@ pub fn ensure_initialized_from_app(app: &tauri::AppHandle) {
         });
     }
 }
+
+/// Extract a video thumbnail directly using Android's native MediaMetadataRetriever via JNI.
+#[cfg(target_os = "android")]
+pub fn extract_video_thumbnail(app: &tauri::AppHandle, path: &str) -> Option<Vec<u8>> {
+    ensure_initialized_from_app(app);
+    let ctx = get_android_context()?;
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    let main_class = get_main_activity_jclass()?;
+    let path_jstr = env.new_string(path).ok()?;
+    let result = env.call_static_method(
+        &main_class,
+        "extractVideoThumbnail",
+        "(Ljava/lang/String;)[B",
+        &[jni::objects::JValue::from(&path_jstr)],
+    ).ok()?;
+    let obj = result.l().ok()?;
+    if obj.is_null() {
+        return None;
+    }
+    let byte_array: jni::objects::JByteArray = obj.into();
+    let bytes = env.convert_byte_array(byte_array).ok()?;
+    Some(bytes)
+}

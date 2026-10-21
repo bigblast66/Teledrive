@@ -118,7 +118,7 @@ export function MobileMediaPlayer({
     }
   }, [isPlaying]);
 
-  // Load and buffer media via preview cache
+  // Load media: tries on-demand chunk streaming first, falls back to preview cache if needed
   const loadMedia = useCallback(async () => {
     const key = getCacheKey(file.id, activeFolderId);
     const cached = mediaCache.get(key);
@@ -135,6 +135,23 @@ export function MobileMediaPlayer({
     setError(null);
     fallbackAttemptedRef.current = false;
 
+    // 1. Try on-demand chunk streaming via local loopback streaming server
+    try {
+      const streamInfo = await invoke<{ token: string; base_url: string }>('cmd_get_stream_info');
+      if (streamInfo?.base_url && streamInfo?.token) {
+        const folderParam = activeFolderId !== null ? activeFolderId.toString() : 'home';
+        const streamUrl = `${streamInfo.base_url}/stream/${folderParam}/${file.id}?token=${streamInfo.token}`;
+        setSrc(streamUrl);
+        setRawPath(null);
+        mediaCache.set(key, { src: streamUrl, rawPath: null });
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // Streaming info unavailable, proceed to preview cache download
+    }
+
+    // 2. Fallback to cache preview download
     try {
       const result = await invoke<string>('cmd_get_preview', {
         messageId: file.id,
@@ -170,51 +187,75 @@ export function MobileMediaPlayer({
     };
   }, [loadMedia]);
 
-  // Fallback to in-memory Blob URL if native convertFileSrc throws an error in WebView
+  // Fallback to in-memory Blob URL or cache preview if stream/asset throws an error in WebView
   const handleMediaError = useCallback(async () => {
-    if (fallbackAttemptedRef.current || !rawPath) {
+    if (fallbackAttemptedRef.current) {
       setError('Unable to play directly in WebView. Open in your device video player.');
       return;
     }
 
     fallbackAttemptedRef.current = true;
+
+    // If stream URL failed, fallback to cache preview download
     try {
-      const bytes = await invoke<number[]>('cmd_read_media_file', { path: rawPath });
-      if (bytes && bytes.length > 0) {
-        const mime = getMimeType(file.name);
-        const blob = new Blob([new Uint8Array(bytes)], { type: mime });
-        const blobUrl = URL.createObjectURL(blob);
-        setSrc(blobUrl);
-        setError(null);
-        return;
+      const result = await invoke<string>('cmd_get_preview', {
+        messageId: file.id,
+        folderId: activeFolderId,
+      });
+      if (result) {
+        if (result.startsWith('data:')) {
+          setSrc(result);
+          setError(null);
+          return;
+        } else {
+          setRawPath(result);
+          // Try reading as blob
+          try {
+            const bytes = await invoke<number[]>('cmd_read_media_file', { path: result });
+            if (bytes && bytes.length > 0) {
+              const mime = getMimeType(file.name);
+              const blob = new Blob([new Uint8Array(bytes)], { type: mime });
+              const blobUrl = URL.createObjectURL(blob);
+              setSrc(blobUrl);
+              setError(null);
+              return;
+            }
+          } catch {
+            // Blob read failed
+          }
+        }
       }
     } catch {
-      // Fallback failed
+      // Preview download failed
     }
 
     setError('Unable to decode video format in WebView. Please open with external player.');
-  }, [rawPath, file.name]);
+  }, [file.id, file.name, activeFolderId]);
 
   // Launch native external app (VLC, MX Player, System Gallery, etc.)
   const handleOpenExternally = useCallback(async () => {
     setIsOpeningNative(true);
     try {
-      let targetPath = rawPath;
-      if (!targetPath) {
-        targetPath = await invoke<string>('cmd_get_preview', {
-          messageId: file.id,
-          folderId: activeFolderId,
-        });
-      }
-      if (targetPath && !targetPath.startsWith('data:')) {
-        await invoke('cmd_open_file_externally', { path: targetPath });
+      if (src && (src.startsWith('http://') || src.startsWith('https://'))) {
+        await invoke('cmd_open_file_externally', { path: src });
+      } else {
+        let targetPath = rawPath;
+        if (!targetPath) {
+          targetPath = await invoke<string>('cmd_get_preview', {
+            messageId: file.id,
+            folderId: activeFolderId,
+          });
+        }
+        if (targetPath) {
+          await invoke('cmd_open_file_externally', { path: targetPath });
+        }
       }
     } catch (e) {
       setError(`Failed to open in external app: ${e}`);
     } finally {
       setIsOpeningNative(false);
     }
-  }, [rawPath, file.id, activeFolderId]);
+  }, [src, rawPath, file.id, activeFolderId]);
 
   // Capture video frame to create a persistent thumbnail in Grid view
   const handleVideoLoadedData = useCallback(() => {

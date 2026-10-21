@@ -151,14 +151,17 @@ class MainActivity : TauriActivity() {
         fun openFileExternally(path: String, mimeType: String): Boolean {
             val context = instance ?: appContext ?: return false
             return try {
-                val file = File(path)
-                val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val uri: Uri = if (path.startsWith("http://") || path.startsWith("https://")) {
+                    Uri.parse(path)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    val file = File(path)
                     FileProvider.getUriForFile(
                         context,
                         "${context.packageName}.fileprovider",
                         file
                     )
                 } else {
+                    val file = File(path)
                     Uri.fromFile(file)
                 }
 
@@ -173,6 +176,42 @@ class MainActivity : TauriActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to open file externally: ${e.message}", e)
                 false
+            }
+        }
+
+        @JvmStatic
+        fun extractVideoThumbnail(path: String): ByteArray? {
+            val retriever = android.media.MediaMetadataRetriever()
+            return try {
+                retriever.setDataSource(path)
+                val bitmap = retriever.getFrameAtTime(1000000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: retriever.frameAtTime
+                if (bitmap != null) {
+                    val stream = java.io.ByteArrayOutputStream()
+                    val maxDim = Math.max(bitmap.width, bitmap.height)
+                    val scale = if (maxDim > 360) 360f / maxDim else 1f
+                    val scaled = if (scale < 1f) {
+                        android.graphics.Bitmap.createScaledBitmap(
+                            bitmap,
+                            (bitmap.width * scale).toInt(),
+                            (bitmap.height * scale).toInt(),
+                            true
+                        )
+                    } else {
+                        bitmap
+                    }
+                    scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, stream)
+                    stream.toByteArray()
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to extract video thumbnail: ${e.message}")
+                null
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Exception) {}
             }
         }
 
