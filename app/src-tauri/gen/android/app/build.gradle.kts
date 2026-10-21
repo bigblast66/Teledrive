@@ -17,7 +17,7 @@ android {
     compileSdk = 35
     namespace = "com.bigblast66.telegramdrive"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.bigblast66.telegramdrive"
         minSdk = 24
         targetSdk = 35

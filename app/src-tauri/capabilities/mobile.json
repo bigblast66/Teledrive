@@ -38,6 +38,7 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "opener:default",
+    "opener:allow-open-path",
     "shell:allow-open"
   ]
 }

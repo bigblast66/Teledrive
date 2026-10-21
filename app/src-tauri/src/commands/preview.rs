@@ -351,8 +351,15 @@ pub async fn cmd_get_preview(
             };
             if file_ready {
                 let lower_ext = ext.to_lowercase();
-                if ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].contains(&lower_ext.as_str()) {
-                    log::info!("Converting file to Base64...");
+                let is_image = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].contains(&lower_ext.as_str());
+                let is_audio = ["mp3", "m4a", "wav", "ogg", "flac", "aac", "opus", "wma"].contains(&lower_ext.as_str());
+                let is_video = ["mp4", "webm", "m4v", "mov"].contains(&lower_ext.as_str());
+
+                let file_len = tokio::fs::metadata(&save_path).await.map(|m| m.len()).unwrap_or(0);
+                let should_base64 = is_image || ((is_audio || is_video) && file_len <= 35 * 1024 * 1024);
+
+                if should_base64 {
+                    log::info!("Converting media file ({} bytes) to Base64 data URL...", file_len);
                     match tokio::fs::read(&save_path).await {
                         Ok(bytes) => {
                             let b64 = general_purpose::STANDARD.encode(&bytes);
@@ -362,7 +369,18 @@ pub async fn cmd_get_preview(
                                 "webp" => "image/webp",
                                 "bmp" => "image/bmp",
                                 "svg" => "image/svg+xml",
-                                _ => "image/jpeg",
+                                "jpg" | "jpeg" => "image/jpeg",
+                                "mp3" => "audio/mpeg",
+                                "m4a" => "audio/mp4",
+                                "wav" => "audio/wav",
+                                "ogg" | "opus" => "audio/ogg",
+                                "flac" => "audio/flac",
+                                "aac" => "audio/aac",
+                                "wma" => "audio/x-ms-wma",
+                                "mp4" | "m4v" => "video/mp4",
+                                "webm" => "video/webm",
+                                "mov" => "video/quicktime",
+                                _ => if is_audio { "audio/mpeg" } else if is_video { "video/mp4" } else { "application/octet-stream" },
                             };
                             return Ok(format!("data:{};base64,{}", mime, b64));
                         },
@@ -378,6 +396,13 @@ pub async fn cmd_get_preview(
         }
     }
     Err("File not found or failed to download".to_string())
+}
+
+#[tauri::command]
+pub async fn cmd_read_media_file(
+    path: String,
+) -> Result<Vec<u8>, String> {
+    tokio::fs::read(&path).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
