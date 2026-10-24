@@ -134,36 +134,40 @@ function MobileGridCard({
             )}
           </>
         ) : isVid ? (
-          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-[#1c1d22] to-[#121316]">
+          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-[#1a1b20] to-[#111215] overflow-hidden">
             {/* Format pill badge */}
-            <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-[9px] font-mono font-bold tracking-wider text-white/70 uppercase">
+            <div className="absolute top-2 left-2 z-10 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-[9px] font-mono font-bold tracking-wider text-white/75 uppercase">
               {file.name.split('.').pop() || 'VID'}
             </div>
-            {/* Centered Drive-style frosted play badge */}
-            <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-white shadow-lg backdrop-blur-sm">
-              <Play className="w-5 h-5 fill-white/80 text-white ml-0.5" />
+            {/* Centered Drive-style frosted play circle */}
+            <div className="z-10 w-10 h-10 rounded-full bg-black/45 backdrop-blur-md border border-white/20 flex items-center justify-center text-white/90 shadow-lg">
+              <Play className="w-4 h-4 fill-white ml-0.5" />
             </div>
-            {/* Shimmer animation while fetching thumbnail */}
+            {/* Moving skeleton shimmer sweep while fetching thumbnail */}
             {loadingThumb && (
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent animate-pulse pointer-events-none" />
+              <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="w-full h-full bg-gradient-to-r from-transparent via-white/15 to-transparent animate-shimmer" />
+              </div>
             )}
           </div>
         ) : isAud ? (
-          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-[#1e1e24] to-[#14141a]">
-            <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-[9px] font-mono font-bold tracking-wider text-amber-400/80 uppercase">
+          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-[#1e1e24] to-[#14141a] overflow-hidden">
+            <div className="absolute top-2 left-2 z-10 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-[9px] font-mono font-bold tracking-wider text-amber-400/80 uppercase">
               {file.name.split('.').pop() || 'AUDIO'}
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400 shadow-md">
-              <Music className="w-6 h-6" />
+            <div className="z-10 w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-md">
+              <Music className="w-5 h-5" />
             </div>
           </div>
         ) : (
-          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-telegram-hover/10">
-            <div className="transform scale-125 mb-1">
+          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-telegram-hover/10 overflow-hidden">
+            <div className="transform scale-125 mb-1 z-10">
               <FileTypeIcon filename={file.name} />
             </div>
             {loadingThumb && (
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.05] to-transparent animate-pulse pointer-events-none" />
+              <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer" />
+              </div>
             )}
           </div>
         )}

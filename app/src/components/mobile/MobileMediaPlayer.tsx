@@ -10,7 +10,6 @@ import {
   RotateCcw,
   RotateCw,
   Music,
-  Film,
   Volume2,
   VolumeX,
   Maximize,
@@ -21,6 +20,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { TelegramFile } from '../../types';
 import { isVideoFile, isAudioFile, formatBytes } from '../../utils';
+import { thumbnailCache } from './TouchFileList';
 
 interface MobileMediaPlayerProps {
   file: TelegramFile;
@@ -35,9 +35,14 @@ const mediaCache = new Map<string, { src: string; rawPath: string | null }>();
 const getCacheKey = (fileId: number, folderId: number | null) => `${folderId ?? 'home'}:${fileId}`;
 
 function formatTime(seconds: number): string {
-  if (isNaN(seconds) || seconds < 0) return '0:00';
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
+  if (!Number.isFinite(seconds) || isNaN(seconds) || seconds <= 0) return '0:00';
+  const totalSeconds = Math.floor(seconds);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
@@ -100,6 +105,7 @@ export function MobileMediaPlayer({
   const [showControls, setShowControls] = useState(true);
   const hideControlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackAttemptedRef = useRef(false);
+  const thumbnailSrc = thumbnailCache.get(file.id) || null;
 
   // Double-tap gesture state
   const lastTapTimeRef = useRef(0);
@@ -114,7 +120,7 @@ export function MobileMediaPlayer({
     if (isPlaying) {
       hideControlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
-      }, 3500);
+      }, 2200);
     }
   }, [isPlaying]);
 
@@ -323,7 +329,8 @@ export function MobileMediaPlayer({
     navigator.vibrate?.(10);
     const mediaEl = isVideo ? videoRef.current : audioRef.current;
     if (!mediaEl) return;
-    mediaEl.currentTime = Math.max(0, Math.min(duration, mediaEl.currentTime + seconds));
+    const maxDur = Number.isFinite(duration) && duration > 0 ? duration : 999999;
+    mediaEl.currentTime = Math.max(0, Math.min(maxDur, mediaEl.currentTime + seconds));
     resetControlsTimeout();
   };
 
@@ -446,24 +453,29 @@ export function MobileMediaPlayer({
       {/* Main Playback Center */}
       <div className="flex-1 w-full h-full flex items-center justify-center relative overflow-hidden">
         {loading && (
-          <div className="flex flex-col items-center gap-4 text-white p-6 max-w-xs text-center z-20">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-telegram-primary/10 border-2 border-telegram-primary/30 flex items-center justify-center animate-pulse">
-                {isVideo ? (
-                  <Film className="w-8 h-8 text-telegram-primary" />
-                ) : (
-                  <Music className="w-8 h-8 text-telegram-primary" />
-                )}
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden z-20">
+            {thumbnailSrc && (
+              <>
+                <img
+                  src={thumbnailSrc}
+                  alt=""
+                  className="w-full h-full object-contain filter blur-md opacity-60 scale-105 pointer-events-none"
+                />
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  <div className="w-full h-full bg-gradient-to-r from-transparent via-white/15 to-transparent animate-shimmer" />
+                </div>
+              </>
+            )}
+            <div className="relative px-5 py-3 rounded-full bg-black/70 backdrop-blur-md border border-white/15 flex items-center gap-3 text-white shadow-2xl">
+              <div className="w-4 h-4 border-2 border-telegram-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-semibold leading-tight">
+                  {isVideo ? 'Loading video stream...' : 'Loading audio...'}
+                </span>
+                <span className="text-[10px] text-white/60 leading-tight">
+                  Streaming on-demand
+                </span>
               </div>
-              <div className="absolute inset-0 rounded-full border-2 border-telegram-primary border-t-transparent animate-spin" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-white">
-                Preparing {isVideo ? 'video' : 'audio'}...
-              </p>
-              <p className="text-xs text-white/60 mt-1">
-                Decrypting and streaming from Telegram
-              </p>
             </div>
           </div>
         )}
@@ -502,13 +514,28 @@ export function MobileMediaPlayer({
             <video
               ref={videoRef}
               src={src}
+              poster={thumbnailSrc || undefined}
               playsInline
               autoPlay
               onTimeUpdate={() => {
-                if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
+                if (videoRef.current) {
+                  const ct = videoRef.current.currentTime;
+                  if (Number.isFinite(ct) && !isNaN(ct)) setCurrentTime(ct);
+                  const d = videoRef.current.duration;
+                  if (Number.isFinite(d) && !isNaN(d) && d > 0 && d !== duration) setDuration(d);
+                }
               }}
               onLoadedMetadata={() => {
-                if (videoRef.current) setDuration(videoRef.current.duration);
+                if (videoRef.current) {
+                  const d = videoRef.current.duration;
+                  if (Number.isFinite(d) && !isNaN(d) && d > 0) setDuration(d);
+                }
+              }}
+              onDurationChange={() => {
+                if (videoRef.current) {
+                  const d = videoRef.current.duration;
+                  if (Number.isFinite(d) && !isNaN(d) && d > 0) setDuration(d);
+                }
               }}
               onLoadedData={handleVideoLoadedData}
               onError={handleMediaError}
@@ -540,20 +567,20 @@ export function MobileMediaPlayer({
             >
               <div className="w-full h-20 bg-gradient-to-b from-black/80 to-transparent pointer-events-none" />
 
-              {/* Big Center Play/Pause Touch Target */}
+              {/* Center Play/Pause Touch Target */}
               <div className="flex items-center justify-center pointer-events-auto">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     togglePlayPause();
                   }}
-                  className="w-16 h-16 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white active:scale-90 transition-all shadow-2xl"
+                  className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-lg border border-white/20 flex items-center justify-center text-white active:scale-90 hover:scale-105 transition-all shadow-2xl"
                   aria-label={isPlaying ? 'Pause' : 'Play'}
                 >
                   {isPlaying ? (
-                    <Pause className="w-8 h-8 fill-white" />
+                    <Pause className="w-7 h-7 fill-white" />
                   ) : (
-                    <Play className="w-8 h-8 fill-white ml-1" />
+                    <Play className="w-7 h-7 fill-white ml-0.5" />
                   )}
                 </button>
               </div>
@@ -572,14 +599,15 @@ export function MobileMediaPlayer({
                   <input
                     type="range"
                     min={0}
-                    max={duration || 100}
+                    max={Number.isFinite(duration) && duration > 0 ? duration : 100}
                     step={0.1}
-                    value={currentTime}
+                    value={Number.isFinite(currentTime) ? currentTime : 0}
+                    disabled={!Number.isFinite(duration) || duration <= 0}
                     onChange={handleSeek}
-                    className="flex-1 h-1.5 bg-white/25 rounded-lg appearance-none cursor-pointer accent-telegram-primary"
+                    className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-telegram-primary"
                   />
                   <span className="text-[11px] font-mono text-white/70 min-w-[2.5rem] text-right">
-                    {formatTime(duration)}
+                    {Number.isFinite(duration) && duration > 0 ? formatTime(duration) : '--:--'}
                   </span>
                 </div>
 
@@ -647,10 +675,24 @@ export function MobileMediaPlayer({
               src={src}
               autoPlay
               onTimeUpdate={() => {
-                if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+                if (audioRef.current) {
+                  const ct = audioRef.current.currentTime;
+                  if (Number.isFinite(ct) && !isNaN(ct)) setCurrentTime(ct);
+                  const d = audioRef.current.duration;
+                  if (Number.isFinite(d) && !isNaN(d) && d > 0 && d !== duration) setDuration(d);
+                }
               }}
               onLoadedMetadata={() => {
-                if (audioRef.current) setDuration(audioRef.current.duration);
+                if (audioRef.current) {
+                  const d = audioRef.current.duration;
+                  if (Number.isFinite(d) && !isNaN(d) && d > 0) setDuration(d);
+                }
+              }}
+              onDurationChange={() => {
+                if (audioRef.current) {
+                  const d = audioRef.current.duration;
+                  if (Number.isFinite(d) && !isNaN(d) && d > 0) setDuration(d);
+                }
               }}
               onError={handleMediaError}
               onEnded={() => setIsPlaying(false)}
@@ -694,15 +736,16 @@ export function MobileMediaPlayer({
                 <input
                   type="range"
                   min={0}
-                  max={duration || 100}
+                  max={Number.isFinite(duration) && duration > 0 ? duration : 100}
                   step={0.1}
-                  value={currentTime}
+                  value={Number.isFinite(currentTime) ? currentTime : 0}
+                  disabled={!Number.isFinite(duration) || duration <= 0}
                   onChange={handleSeek}
                   className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-telegram-primary"
                 />
                 <div className="flex justify-between text-[11px] font-mono text-white/60">
                   <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
+                  <span>{Number.isFinite(duration) && duration > 0 ? formatTime(duration) : '--:--'}</span>
                 </div>
               </div>
 
