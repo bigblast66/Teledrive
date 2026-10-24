@@ -171,7 +171,7 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
     }, [onClose, onNext, onPrev]);
 
     return (
-        <div className="fixed inset-0 z-[150] bg-black/90 flex flex-col backdrop-blur-sm overflow-hidden" onClick={onClose}>
+        <div className="fixed inset-0 z-[150] bg-black/90 flex flex-col backdrop-blur-md overflow-hidden animate-in fade-in duration-200" onClick={onClose}>
             {/* Top bar — always inside the viewport, safe-area aware, so the
                 close button can never end up off-screen (it used to sit at
                 `-top-12` relative to the content box, which only stayed
@@ -245,7 +245,7 @@ export function PreviewModal({ file, onClose, onNext, onPrev, currentIndex, tota
                         {isImageFile(file.name) ? (
                             <img
                                 src={src}
-                                className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl bg-black"
+                                className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl bg-black animate-in zoom-in-95 duration-200"
                                 alt="Preview"
                                 onError={() => {
                                     const key = getPreviewCacheKey(file.id, activeFolderId);

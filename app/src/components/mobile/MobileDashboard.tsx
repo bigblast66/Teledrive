@@ -195,18 +195,19 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const handleCheckLatency = useCallback(async () => {
     setCheckingLatency(true);
     setLatencyMs(null);
+    toast.loading('Checking latency to Telegram DC...', { id: 'ping-check' });
     try {
       const ms = await invoke<number>('cmd_check_latency');
       setLatencyMs(ms);
       if (ms >= 0) {
         const emoji = ms < 100 ? '🟢' : ms < 250 ? '🟡' : '🔴';
-        toast.success(`${emoji} Ping: ${ms}ms to Telegram DC`);
+        toast.success(`${emoji} Ping: ${ms}ms to Telegram DC`, { id: 'ping-check' });
       } else {
-        toast.error('Unable to reach Telegram servers');
+        toast.error('Unable to reach Telegram servers', { id: 'ping-check' });
       }
     } catch (e) {
       console.warn('Ping check failed:', e);
-      toast.error('Unable to reach Telegram servers');
+      toast.error('Unable to reach Telegram servers', { id: 'ping-check' });
       setLatencyMs(-1);
     } finally {
       setCheckingLatency(false);
@@ -301,7 +302,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const { handleDelete: handleDeleteOp, handleBulkDelete, handleBulkDownload, handleBulkMove } = useFileOperations(activeFolderId, selectedIds, setSelectedIds, allFiles, queueBulkDownload);
 
   const activeFolder = activeFolderId === null
-    ? 'Saved Messages'
+    ? 'My Drive'
     : folders.find(f => f.id === activeFolderId)?.name || 'Unknown Channel';
 
   // Folder action menu state (replaces swipe-to-reveal)
@@ -676,7 +677,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     <div className="absolute inset-0 flex flex-col bg-telegram-bg text-telegram-text overflow-hidden select-none font-sans">
       {/* Google Drive Floating Search Bar & Header */}
       <header className="px-4 pt-[calc(0.75rem+env(safe-area-inset-top,24px))] pb-2.5 sticky top-0 z-40 bg-telegram-bg/95 backdrop-blur-md border-b border-telegram-border/20">
-        <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-telegram-hover/30 hover:bg-telegram-hover/45 border border-telegram-border/40 shadow-sm transition-all focus-within:border-telegram-primary/60 focus-within:bg-telegram-hover/50">
+        <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-white dark:bg-telegram-surface border border-black/10 dark:border-white/10 shadow-sm transition-all focus-within:border-telegram-primary/60 focus-within:ring-1 focus-within:ring-telegram-primary/30">
           <button
             onClick={() => setIsSidebarOpen(true)}
             className="p-1 rounded-xl text-telegram-subtext hover:text-telegram-text transition-colors active:scale-95"
@@ -691,8 +692,8 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Search in ${activeFolderId === null ? 'Drive' : activeFolder}...`}
-              className="w-full bg-transparent border-none text-xs sm:text-sm text-telegram-text placeholder:text-telegram-subtext/60 focus:outline-none"
+              placeholder={`Search in ${activeFolderId === null ? 'My Drive' : activeFolder}...`}
+              className="w-full bg-transparent border-none text-xs sm:text-sm text-telegram-text placeholder:text-telegram-subtext/70 focus:outline-none"
             />
             {searchQuery && (
               <button
@@ -736,7 +737,7 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium whitespace-nowrap transition-all duration-200 active:scale-95 ${
                     isActive
                       ? 'bg-telegram-primary text-black font-semibold shadow-sm'
-                      : 'bg-telegram-hover/25 text-telegram-subtext hover:text-telegram-text border border-telegram-border/30 hover:bg-telegram-hover/40'
+                      : 'bg-white/80 dark:bg-telegram-surface/60 text-telegram-text hover:bg-white dark:hover:bg-telegram-surface border border-black/10 dark:border-white/10 shadow-xs'
                   }`}
                 >
                   {cat.icon}
@@ -1500,7 +1501,10 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
                 : 'text-telegram-subtext hover:bg-telegram-hover/40 hover:text-telegram-text border border-transparent'
               }`}
           >
-            <span>Saved Messages</span>
+            <span className="flex items-center gap-2">
+              <Folder className="w-4 h-4 text-telegram-primary" />
+              My Drive
+            </span>
           </button>
 
           {folders.map(folder => {
@@ -1585,16 +1589,13 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
       {activeTab === 'files' && (
         <button
           onClick={() => setShowFabSheet(true)}
-          className="fixed right-5 bottom-24 z-30 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-telegram-surface border border-telegram-border/60 shadow-2xl active:scale-95 transition-all duration-200 text-telegram-text group"
+          className="fixed right-5 bottom-20 z-40 w-14 h-14 rounded-2xl bg-white dark:bg-telegram-surface border border-black/10 dark:border-white/10 text-telegram-primary shadow-xl flex items-center justify-center active:scale-90 hover:scale-105 transition-all duration-200"
           style={{
-            boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.45), 0 2px 8px -2px rgba(0, 0, 0, 0.25)'
+            boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.35), 0 2px 8px -2px rgba(0, 0, 0, 0.15)'
           }}
-          aria-label="Add new"
+          aria-label="Create new"
         >
-          <div className="w-6 h-6 rounded-lg bg-telegram-primary/20 flex items-center justify-center text-telegram-primary group-hover:bg-telegram-primary group-hover:text-black transition-colors">
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-          </div>
-          <span className="text-xs font-bold tracking-wide">New</span>
+          <Plus className="w-7 h-7 stroke-[2.2]" />
         </button>
       )}
 

@@ -187,6 +187,18 @@ body,
   background: rgba(36, 129, 204, 0.5);
 }
 
+/* Hide scrollbar utility for clean horizontal scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 /* Progress Animation */
 @keyframes progress-indeterminate {
   0% {

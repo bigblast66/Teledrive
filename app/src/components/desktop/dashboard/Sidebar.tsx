@@ -245,7 +245,7 @@ export function Sidebar({
 
     return (
         <aside 
-            className={`transition-all duration-300 ${settings.sidebarCollapsed ? 'w-14' : 'w-64'} bg-telegram-surface border-r border-telegram-border flex flex-col`} 
+            className={`transition-[width] duration-300 ease-in-out ${settings.sidebarCollapsed ? 'w-14' : 'w-64'} bg-telegram-surface border-r border-telegram-border flex flex-col`} 
             onClick={e => e.stopPropagation()}
         >
             <div className={`p-4 flex ${settings.sidebarCollapsed ? 'flex-col items-center gap-2' : 'items-center justify-between'} min-h-[64px]`}>

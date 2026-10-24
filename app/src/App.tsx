@@ -184,7 +184,13 @@ function AppContent() {
         onUpdate={downloadAndInstall}
         onDismiss={dismissUpdate}
       />
-      <Toaster theme={theme} position="bottom-center" />
+      <Toaster
+        theme={theme}
+        position={isMobile ? "top-center" : "bottom-right"}
+        visibleToasts={1}
+        duration={2500}
+        expand={false}
+      />
       {authStatus === "needs-password" && (
         <UnlockScreen onSuccess={() => setAuthStatus("authenticated")} />
       )}

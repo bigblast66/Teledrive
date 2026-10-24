@@ -607,7 +607,7 @@ export function TouchFileList({
                         : 'text-telegram-subtext hover:bg-telegram-hover'
                     }`}
                   >
-                    📁 Saved Messages
+                    📁 My Drive
                   </button>
                   {folders
                     .filter((f) => f.id !== activeFolderId)

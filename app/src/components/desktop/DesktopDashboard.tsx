@@ -559,7 +559,7 @@ export function Dashboard({ onLogout }: { onLogout: () => void }) {
     }
 
     const currentFolderName = activeFolderId === null
-        ? "Saved Messages"
+        ? "My Drive"
         : folders.find(f => f.id === activeFolderId)?.name || "Folder";
 
 

@@ -131,8 +131,9 @@ export function FileCard({ file, onDelete, onDownload, onPreview, onOpen, onShar
             }}
         >
             <motion.div
-                whileHover={{ y: -4 }}
-                className={`group cursor-pointer bg-telegram-surface rounded-xl overflow-hidden border hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)] transition-all relative
+                whileHover={{ y: -3, transition: { duration: 0.18, ease: 'easeOut' } }}
+                whileTap={{ scale: 0.985, transition: { duration: 0.1 } }}
+                className={`group cursor-pointer bg-telegram-surface rounded-xl overflow-hidden border hover:shadow-xl hover:shadow-black/20 transition-colors duration-200 relative
                 ${isSelected ? 'border-telegram-primary bg-telegram-primary/5 ring-1 ring-telegram-primary' : 'border-telegram-border hover:border-telegram-primary/50'}
                 ${isDragOver ? 'ring-2 ring-telegram-primary bg-telegram-primary/20 scale-105' : ''}`}
                 style={height ? { height: `${height}px` } : { aspectRatio: '4/3' }}
