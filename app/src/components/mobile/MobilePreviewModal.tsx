@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { TelegramFile } from '../../types';
 import { isImageFile } from '../../utils';
+import { thumbnailCache } from './TouchFileList';
 
 interface MobilePreviewModalProps {
   file: TelegramFile;
@@ -41,6 +42,9 @@ export function MobilePreviewModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(true);
+
+  // Fast placeholder from thumbnail cache
+  const placeholderSrc = thumbnailCache.get(file.id) || null;
 
   // Zoom and pan state
   const [scale, setScale] = useState(1);
@@ -270,8 +274,23 @@ export function MobilePreviewModal({
       </div>
 
       {/* Main Preview Area */}
-      <div className="flex-1 w-full h-full flex items-center justify-center overflow-hidden">
-        {loading && (
+      <div className="flex-1 w-full h-full flex items-center justify-center overflow-hidden relative">
+        {/* Instant Blur-Up Thumbnail while downloading full-res */}
+        {loading && placeholderSrc && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <img
+              src={placeholderSrc}
+              alt=""
+              className="max-w-full max-h-full object-contain filter blur-md scale-105 opacity-75 transition-all duration-300"
+            />
+            <div className="absolute bottom-20 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center gap-2 text-white/90 text-xs shadow-xl animate-fade-in">
+              <div className="w-3.5 h-3.5 border-2 border-telegram-primary border-t-transparent rounded-full animate-spin" />
+              <span>Loading high-res...</span>
+            </div>
+          </div>
+        )}
+
+        {loading && !placeholderSrc && (
           <div className="flex flex-col items-center gap-3 text-white">
             <div className="w-9 h-9 border-3 border-telegram-primary border-t-transparent rounded-full animate-spin" />
             <p className="text-xs text-white/80 font-medium">Decrypting preview...</p>
@@ -304,7 +323,7 @@ export function MobilePreviewModal({
           </div>
         )}
 
-        {!loading && !error && src && (
+        {!error && src && (
           <div
             className="w-full h-full flex items-center justify-center transition-transform duration-100 ease-out"
             style={{
@@ -314,7 +333,7 @@ export function MobilePreviewModal({
             <img
               src={src}
               alt={file.name}
-              className="max-w-full max-h-full object-contain pointer-events-none"
+              className="max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-200"
               draggable={false}
               onError={() => setError('Failed to display preview image')}
             />

@@ -31,7 +31,7 @@ type SortField = 'name' | 'size' | 'date';
 type SortDirection = 'asc' | 'desc';
 type ViewMode = 'grid' | 'list';
 
-const thumbnailCache = new Map<number, string>();
+export const thumbnailCache = new Map<number, string>();
 
 interface MobileGridCardProps {
   file: TelegramFile;
@@ -134,31 +134,36 @@ function MobileGridCard({
             )}
           </>
         ) : isVid ? (
-          <div className="flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-indigo-500/10 to-purple-500/10">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center mb-1 text-indigo-400 shadow-sm">
-              <Play className="w-6 h-6 fill-indigo-400/60 ml-0.5" />
+          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-[#1c1d22] to-[#121316]">
+            {/* Format pill badge */}
+            <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-[9px] font-mono font-bold tracking-wider text-white/70 uppercase">
+              {file.name.split('.').pop() || 'VID'}
             </div>
+            {/* Centered Drive-style frosted play badge */}
+            <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-white shadow-lg backdrop-blur-sm">
+              <Play className="w-5 h-5 fill-white/80 text-white ml-0.5" />
+            </div>
+            {/* Shimmer animation while fetching thumbnail */}
             {loadingThumb && (
-              <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px] flex items-center justify-center">
-                <div className="w-5 h-5 border-2 border-telegram-primary border-t-transparent rounded-full animate-spin" />
-              </div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent animate-pulse pointer-events-none" />
             )}
           </div>
         ) : isAud ? (
-          <div className="flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-amber-500/10 to-orange-500/10">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mb-1 text-amber-400 shadow-sm">
+          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-gradient-to-br from-[#1e1e24] to-[#14141a]">
+            <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-md text-[9px] font-mono font-bold tracking-wider text-amber-400/80 uppercase">
+              {file.name.split('.').pop() || 'AUDIO'}
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400 shadow-md">
               <Music className="w-6 h-6" />
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center p-4">
+          <div className="relative flex flex-col items-center justify-center p-4 w-full h-full bg-telegram-hover/10">
             <div className="transform scale-125 mb-1">
               <FileTypeIcon filename={file.name} />
             </div>
             {loadingThumb && (
-              <div className="absolute inset-0 bg-black/10 backdrop-blur-[1px] flex items-center justify-center">
-                <div className="w-5 h-5 border-2 border-telegram-primary border-t-transparent rounded-full animate-spin" />
-              </div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.05] to-transparent animate-pulse pointer-events-none" />
             )}
           </div>
         )}

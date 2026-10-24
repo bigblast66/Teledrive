@@ -1,5 +1,10 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil, Globe, Shield, Lock, ChevronDown, Share2, Link, Copy, Check, X, Loader2, Wifi, Activity, Zap, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import {
+  Folder, Download, Menu, LogOut, RefreshCw, UploadCloud, MoreVertical, Trash2, Pencil,
+  Globe, Shield, Lock, ChevronDown, Share2, Link, Copy, Check, X, Loader2, Wifi, Activity,
+  Zap, Eye, EyeOff, RotateCcw, Search, Plus, FolderPlus, ArrowLeft, Image as ImageIcon,
+  Video, FileText, Music, Archive, CheckCircle2
+} from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
@@ -17,12 +22,15 @@ import { useTelegramConnection } from '../../hooks/useTelegramConnection';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { useFileDownload } from '../../hooks/useFileDownload';
 import { useFileOperations } from '../../hooks/useFileOperations';
-import { formatBytes, isMediaFile, isPdfFile, isImageFile, isTextFile, nativeShareOrCopy, copyToClipboard } from '../../utils';
+import {
+  formatBytes, isMediaFile, isPdfFile, isImageFile, isTextFile,
+  isVideoFile, isAudioFile, isArchiveFile,
+  nativeShareOrCopy, copyToClipboard
+} from '../../utils';
 import { MobileMediaPlayer } from './MobileMediaPlayer';
 import { PdfViewer } from '../desktop/dashboard/PdfViewer';
 import { MobilePreviewModal } from './MobilePreviewModal';
 import { TextViewer } from '../desktop/dashboard/TextViewer';
-import { useTheme } from '../../context/ThemeContext';
 import { TelegramFile, TelegramFolder, ShareInfo, BandwidthStats } from '../../types';
 import { useSettings } from '../../context/SettingsContext';
 import { version as appVersion } from '../../../package.json';
@@ -36,7 +44,6 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const mainScrollRef = useRef<HTMLElement>(null);
   const { isAndroid } = usePlatform();
-  const { theme } = useTheme();
   const { settings, updateSetting } = useSettings();
 
   // ── Android permissions request on mount ────────────────────────────
@@ -314,6 +321,121 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
     setShareFile(null);
   }, [activeFolderId]);
 
+  type CategoryFilter = 'all' | 'videos' | 'photos' | 'docs' | 'audio' | 'archives';
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFabSheet, setShowFabSheet] = useState(false);
+
+  // ── Android Back Button & Edge Swipe Gesture Interception ─────────────
+  const backHandlerStateRef = useRef({
+    playingFile,
+    previewFile,
+    pdfFile,
+    textFile,
+    shareFile,
+    bulkShareLinks,
+    renameFolder,
+    folderActionMenu,
+    showFabSheet,
+    isSidebarOpen,
+    selectedIds,
+    searchQuery,
+    categoryFilter,
+    activeFolderId,
+    activeTab,
+  });
+
+  useEffect(() => {
+    backHandlerStateRef.current = {
+      playingFile,
+      previewFile,
+      pdfFile,
+      textFile,
+      shareFile,
+      bulkShareLinks,
+      renameFolder,
+      folderActionMenu,
+      showFabSheet,
+      isSidebarOpen,
+      selectedIds,
+      searchQuery,
+      categoryFilter,
+      activeFolderId,
+      activeTab,
+    };
+  });
+
+  useEffect(() => {
+    (window as any).__handleAndroidBack = () => {
+      const s = backHandlerStateRef.current;
+      if (s.playingFile) {
+        setPlayingFile(null);
+        return true;
+      }
+      if (s.previewFile) {
+        setPreviewFile(null);
+        return true;
+      }
+      if (s.pdfFile) {
+        setPdfFile(null);
+        return true;
+      }
+      if (s.textFile) {
+        setTextFile(null);
+        return true;
+      }
+      if (s.shareFile) {
+        setShareFile(null);
+        return true;
+      }
+      if (s.bulkShareLinks) {
+        setBulkShareLinks(null);
+        return true;
+      }
+      if (s.renameFolder) {
+        setRenameFolder(null);
+        return true;
+      }
+      if (s.folderActionMenu) {
+        setFolderActionMenu(null);
+        return true;
+      }
+      if (s.showFabSheet) {
+        setShowFabSheet(false);
+        return true;
+      }
+      if (s.isSidebarOpen) {
+        setIsSidebarOpen(false);
+        return true;
+      }
+      if (s.selectedIds.length > 0) {
+        setSelectedIds([]);
+        return true;
+      }
+      if (s.searchQuery.trim().length > 0) {
+        setSearchQuery('');
+        return true;
+      }
+      if (s.categoryFilter !== 'all') {
+        setCategoryFilter('all');
+        return true;
+      }
+      if (s.activeFolderId !== null) {
+        setActiveFolderId(null);
+        return true;
+      }
+      if (s.activeTab !== 'files') {
+        setActiveTab('files');
+        return true;
+      }
+      return false; // Root screen with nothing active: allow default Android back action
+    };
+
+    return () => {
+      delete (window as any).__handleAndroidBack;
+    };
+  }, [setActiveFolderId, setActiveTab]);
+
   const handleFolderVisibilityToggle = useCallback(async (folder: TelegramFolder) => {
     const isPublic = folder.is_public || !!folder.username;
     if (isPublic) {
@@ -524,60 +646,164 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
   }, [folders, activeFolderId]);
 
   const displayFiles = useMemo(() => {
-    if (fileRenames.size === 0) return allFiles;
-    return allFiles.map(f =>
-      fileRenames.has(f.id) ? { ...f, name: fileRenames.get(f.id)! } : f
-    );
-  }, [allFiles, fileRenames]);
+    let files = allFiles;
+    if (fileRenames.size > 0) {
+      files = files.map(f =>
+        fileRenames.has(f.id) ? { ...f, name: fileRenames.get(f.id)! } : f
+      );
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      files = files.filter(f => f.name.toLowerCase().includes(q));
+    }
+    if (categoryFilter !== 'all') {
+      files = files.filter(f => {
+        if (f.type === 'folder') return false;
+        switch (categoryFilter) {
+          case 'videos': return isVideoFile(f.name);
+          case 'photos': return isImageFile(f.name);
+          case 'docs': return isPdfFile(f.name) || isTextFile(f.name) || /\.(docx?|xlsx?|pptx?|epub|odt)$/i.test(f.name);
+          case 'audio': return isAudioFile(f.name);
+          case 'archives': return isArchiveFile(f.name);
+          default: return true;
+        }
+      });
+    }
+    return files;
+  }, [allFiles, fileRenames, searchQuery, categoryFilter]);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-telegram-bg text-telegram-text overflow-hidden select-none font-sans">
-      {/* Premium Gradient Top Header */}
-      <header className="flex items-center justify-between px-5 pb-4 pt-[calc(1rem+env(safe-area-inset-top,24px))] bg-gradient-to-r from-telegram-hover/40 to-telegram-bg border-b border-telegram-border/60 shadow-lg backdrop-blur-md sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <img src="/logo.svg" className="w-8 h-8 drop-shadow-lg" alt="Logo" />
-          <div>
-            <h1 className={`text-base font-bold tracking-tight ${theme === 'light' ? 'text-[#1c1c1e]' : 'bg-gradient-to-r from-white to-telegram-subtext bg-clip-text text-transparent'}`}>Telegram Drive</h1>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
+      {/* Google Drive Floating Search Bar & Header */}
+      <header className="px-4 pt-[calc(0.75rem+env(safe-area-inset-top,24px))] pb-2.5 sticky top-0 z-40 bg-telegram-bg/95 backdrop-blur-md border-b border-telegram-border/20">
+        <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-telegram-hover/30 hover:bg-telegram-hover/45 border border-telegram-border/40 shadow-sm transition-all focus-within:border-telegram-primary/60 focus-within:bg-telegram-hover/50">
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="p-2 rounded-xl bg-telegram-hover/30 hover:bg-telegram-hover/60 border border-telegram-border/40 text-telegram-subtext transition-all duration-300"
+            className="p-1 rounded-xl text-telegram-subtext hover:text-telegram-text transition-colors active:scale-95"
+            aria-label="Open navigation drawer"
           >
             <Menu className="w-5 h-5" />
           </button>
+
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <Search className="w-4 h-4 text-telegram-subtext/70 flex-shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={`Search in ${activeFolderId === null ? 'Drive' : activeFolder}...`}
+              className="w-full bg-transparent border-none text-xs sm:text-sm text-telegram-text placeholder:text-telegram-subtext/60 focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="p-0.5 rounded-full text-telegram-subtext hover:text-telegram-text"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <ThemeToggle />
+            <button
+              onClick={handleSyncFolders}
+              disabled={isSyncing}
+              className="p-1.5 rounded-xl text-telegram-subtext hover:text-telegram-primary active:scale-95 transition-all disabled:opacity-50"
+              title="Sync Drive"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
+
+        {/* Google Drive Category Chips (only in Files view) */}
+        {activeTab === 'files' && (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-2.5">
+            {[
+              { id: 'all' as const, label: 'All' },
+              { id: 'videos' as const, label: 'Videos', icon: <Video className="w-3 h-3" /> },
+              { id: 'photos' as const, label: 'Photos', icon: <ImageIcon className="w-3 h-3" /> },
+              { id: 'docs' as const, label: 'Docs', icon: <FileText className="w-3 h-3" /> },
+              { id: 'audio' as const, label: 'Audio', icon: <Music className="w-3 h-3" /> },
+              { id: 'archives' as const, label: 'Archives', icon: <Archive className="w-3 h-3" /> },
+            ].map((cat) => {
+              const isActive = categoryFilter === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategoryFilter(isActive && cat.id !== 'all' ? 'all' : cat.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium whitespace-nowrap transition-all duration-200 active:scale-95 ${
+                    isActive
+                      ? 'bg-telegram-primary text-black font-semibold shadow-sm'
+                      : 'bg-telegram-hover/25 text-telegram-subtext hover:text-telegram-text border border-telegram-border/30 hover:bg-telegram-hover/40'
+                  }`}
+                >
+                  {cat.icon}
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </header>
 
       {/* Main Viewport Container */}
       <main ref={mainScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4 pb-40 scroll-smooth">
         {activeTab === 'files' && (
-          <div className="space-y-4">
-            {/* Folder Header Breadcrumb */}
-            <div className="flex items-center justify-between bg-telegram-hover/20 p-3 rounded-2xl border border-telegram-border/30 gap-2">
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                <Folder className="w-5 h-5 text-telegram-primary flex-shrink-0" />
-                <span className="text-sm font-semibold truncate text-telegram-text">{activeFolder}</span>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="space-y-3">
+            {/* If inside a folder, show Drive breadcrumb with back button */}
+            {activeFolderId !== null ? (
+              <div className="flex items-center justify-between bg-telegram-hover/20 p-2.5 px-3.5 rounded-2xl border border-telegram-border/30">
                 <button
-                  onClick={handleManualUpload}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-telegram-primary text-black hover:bg-telegram-primary/95 border border-telegram-primary/10 active:scale-95 transition-all duration-200"
+                  onClick={() => setActiveFolderId(null)}
+                  className="flex items-center gap-2 text-xs font-semibold text-telegram-primary active:scale-95 transition-all truncate"
                 >
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  Upload
+                  <ArrowLeft className="w-4 h-4 flex-shrink-0" />
+                  <span className="text-telegram-subtext">Drive /</span>
+                  <span className="text-telegram-text truncate">{activeFolder}</span>
                 </button>
-                <button
-                  onClick={handleSyncFolders}
-                  disabled={isSyncing}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-telegram-primary/15 text-telegram-primary border border-telegram-primary/10 active:scale-95 transition-all duration-200 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  Sync
-                </button>
+                <span className="text-[10px] font-mono text-telegram-subtext/70 flex-shrink-0">
+                  {displayFiles.length} item{displayFiles.length !== 1 ? 's' : ''}
+                </span>
               </div>
+            ) : (
+              /* If at root and user has folders, show quick folder chips */
+              folders.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[11px] font-bold text-telegram-subtext uppercase tracking-wider">Folders</span>
+                    <span className="text-[10px] text-telegram-subtext/60">{folders.length}</span>
+                  </div>
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                    {folders.map(folder => (
+                      <button
+                        key={folder.id}
+                        onClick={() => setActiveFolderId(folder.id)}
+                        className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-telegram-hover/25 hover:bg-telegram-hover/40 border border-telegram-border/30 active:scale-95 transition-all flex-shrink-0 text-left min-w-[120px] max-w-[190px]"
+                      >
+                        <Folder className="w-4 h-4 text-telegram-primary flex-shrink-0" />
+                        <span className="text-xs font-semibold text-telegram-text truncate flex-1">{folder.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            )}
+
+            <div className="flex items-center justify-between px-1 pt-1">
+              <span className="text-[11px] font-bold text-telegram-subtext uppercase tracking-wider">
+                {searchQuery
+                  ? `Search: "${searchQuery}" (${displayFiles.length})`
+                  : categoryFilter !== 'all'
+                  ? `${categoryFilter.toUpperCase()} (${displayFiles.length})`
+                  : 'Files'}
+              </span>
+              {selectedIds.length > 0 && (
+                <span className="text-xs font-semibold text-telegram-primary">
+                  {selectedIds.length} selected
+                </span>
+              )}
             </div>
 
             {/* Dynamic Real File List */}
@@ -1353,6 +1579,119 @@ export default function MobileDashboard({ onLogout }: { onLogout?: () => void })
           onRename={handleFolderRename}
           onClose={() => setRenameFolder(null)}
         />
+      )}
+
+      {/* Google Drive Style Floating Action Button (FAB) */}
+      {activeTab === 'files' && (
+        <button
+          onClick={() => setShowFabSheet(true)}
+          className="fixed right-5 bottom-24 z-30 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-telegram-surface border border-telegram-border/60 shadow-2xl active:scale-95 transition-all duration-200 text-telegram-text group"
+          style={{
+            boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.45), 0 2px 8px -2px rgba(0, 0, 0, 0.25)'
+          }}
+          aria-label="Add new"
+        >
+          <div className="w-6 h-6 rounded-lg bg-telegram-primary/20 flex items-center justify-center text-telegram-primary group-hover:bg-telegram-primary group-hover:text-black transition-colors">
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+          </div>
+          <span className="text-xs font-bold tracking-wide">New</span>
+        </button>
+      )}
+
+      {/* Google Drive Style FAB Bottom Sheet */}
+      {showFabSheet && (
+        <div
+          className="fixed inset-0 z-[150] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setShowFabSheet(false)}
+        >
+          <div
+            className="w-full max-w-md bg-telegram-surface border border-telegram-border/40 rounded-t-3xl p-5 shadow-2xl animate-in slide-in-from-bottom duration-300 flex flex-col gap-4"
+            style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 16px))' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center -mt-1">
+              <div className="w-10 h-1 rounded-full bg-telegram-border/60" />
+            </div>
+
+            <div className="flex items-center justify-between pb-1 border-b border-telegram-border/20">
+              <h3 className="text-sm font-bold text-telegram-text">Create new</h3>
+              <button
+                onClick={() => setShowFabSheet(false)}
+                className="p-1 rounded-lg hover:bg-telegram-hover text-telegram-subtext"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Options Grid */}
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                onClick={() => {
+                  setShowFabSheet(false);
+                  handleManualUpload();
+                }}
+                className="flex flex-col items-center justify-center p-3.5 rounded-2xl bg-telegram-hover/20 hover:bg-telegram-hover/40 border border-telegram-border/30 active:scale-95 transition-all gap-2 text-center"
+              >
+                <div className="w-11 h-11 rounded-2xl bg-telegram-primary/15 text-telegram-primary flex items-center justify-center">
+                  <UploadCloud className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-semibold text-telegram-text">Upload</span>
+              </button>
+
+              <button
+                onClick={async () => {
+                  setShowFabSheet(false);
+                  const name = prompt("Enter folder name:");
+                  if (name && name.trim()) {
+                    await handleCreateFolder(name.trim());
+                  }
+                }}
+                className="flex flex-col items-center justify-center p-3.5 rounded-2xl bg-telegram-hover/20 hover:bg-telegram-hover/40 border border-telegram-border/30 active:scale-95 transition-all gap-2 text-center"
+              >
+                <div className="w-11 h-11 rounded-2xl bg-blue-500/15 text-blue-400 flex items-center justify-center">
+                  <FolderPlus className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-semibold text-telegram-text">Folder</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowFabSheet(false);
+                  handleSyncFolders();
+                }}
+                disabled={isSyncing}
+                className="flex flex-col items-center justify-center p-3.5 rounded-2xl bg-telegram-hover/20 hover:bg-telegram-hover/40 border border-telegram-border/30 active:scale-95 transition-all gap-2 text-center disabled:opacity-50"
+              >
+                <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                  <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
+                </div>
+                <span className="text-xs font-semibold text-telegram-text">Sync</span>
+              </button>
+            </div>
+
+            {/* Cached files received via Android share sheet */}
+            {cachedFiles.length > 0 && (
+              <div className="mt-1 p-3 rounded-2xl bg-telegram-primary/10 border border-telegram-primary/20 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-telegram-primary flex-shrink-0" />
+                  <span className="text-xs font-semibold text-telegram-text">
+                    {cachedFiles.length} file{cachedFiles.length !== 1 ? 's' : ''} from phone
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowFabSheet(false);
+                    cachedFiles.forEach(f => handleUploadCachedFile(f));
+                  }}
+                  className="px-3 py-1 rounded-xl text-xs font-bold bg-telegram-primary text-black active:scale-95 transition"
+                >
+                  Upload All
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Floating Bottom Nav Bar */}

@@ -134,7 +134,7 @@ async fn download_to_file<D: grammers_client::types::Downloadable>(
         .map_err(|e| format!("Failed to create .part file: {}", e))?;
 
     let mut download_iter = client.iter_download(media);
-    download_iter = download_iter.chunk_size(65536);
+    download_iter = download_iter.chunk_size(524288);
     let mut written: u64 = 0;
 
     loop {
@@ -356,7 +356,7 @@ pub async fn cmd_get_preview(
                 let is_video = ["mp4", "webm", "m4v", "mov"].contains(&lower_ext.as_str());
 
                 let file_len = tokio::fs::metadata(&save_path).await.map(|m| m.len()).unwrap_or(0);
-                let should_base64 = is_image || ((is_audio || is_video) && file_len <= 35 * 1024 * 1024);
+                let should_base64 = (is_image && file_len <= 1_500_000) || ((is_audio || is_video) && file_len <= 35 * 1024 * 1024);
 
                 if should_base64 {
                     log::info!("Converting media file ({} bytes) to Base64 data URL...", file_len);

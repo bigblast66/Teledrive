@@ -247,6 +247,13 @@ class MainActivity : TauriActivity() {
         }
     }
 
+    private var webViewRef: WebView? = null
+
+    override fun onWebViewCreate(webView: WebView) {
+        super.onWebViewCreate(webView)
+        webViewRef = webView
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         instance = this
@@ -254,6 +261,28 @@ class MainActivity : TauriActivity() {
         enableEdgeToEdge()
         handleShareIntent(intent)
         checkAndRequestPermissions()
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val wv = webViewRef
+                if (wv != null) {
+                    wv.post {
+                        wv.evaluateJavascript("typeof window.__handleAndroidBack === 'function' ? window.__handleAndroidBack() : false") { result ->
+                            val handled = result == "true" || result == "\"true\""
+                            if (!handled) {
+                                isEnabled = false
+                                onBackPressedDispatcher.onBackPressed()
+                                isEnabled = true
+                            }
+                        }
+                    }
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
     }
 
     override fun onRequestPermissionsResult(
