@@ -46,34 +46,6 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function getMimeType(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  switch (ext) {
-    case 'mp4':
-    case 'm4v':
-      return 'video/mp4';
-    case 'webm':
-      return 'video/webm';
-    case 'mov':
-      return 'video/quicktime';
-    case 'mkv':
-      return 'video/x-matroska';
-    case 'mp3':
-      return 'audio/mpeg';
-    case 'm4a':
-      return 'audio/mp4';
-    case 'wav':
-      return 'audio/wav';
-    case 'flac':
-      return 'audio/flac';
-    case 'ogg':
-    case 'opus':
-      return 'audio/ogg';
-    default:
-      return isVideoFile(filename) ? 'video/mp4' : 'audio/mpeg';
-  }
-}
-
 export function MobileMediaPlayer({
   file,
   activeFolderId,
@@ -122,7 +94,10 @@ export function MobileMediaPlayer({
     return 60;
   }, [file.size, isVideo, isAudio]);
 
-  const effectiveDuration = Number.isFinite(duration) && duration > 0 ? duration : estimatedDuration;
+  const effectiveDuration = useMemo(() => {
+    if (Number.isFinite(duration) && duration > 0) return duration;
+    return Math.max(currentTime + 5, estimatedDuration);
+  }, [duration, currentTime, estimatedDuration]);
 
   // Double-tap gesture state
   const lastTapTimeRef = useRef(0);
@@ -231,6 +206,13 @@ export function MobileMediaPlayer({
 
     fallbackAttemptedRef.current = true;
 
+    // For large videos (>40 MB), don't freeze the app downloading the full file for preview fallback;
+    // suggest opening with the external system player (VLC / MX Player) instead.
+    if (isVideo && file.size > 40 * 1024 * 1024) {
+      setError('WebView player cannot decode this stream. Tap below to open with phone player.');
+      return;
+    }
+
     // If stream URL failed, fallback to cache preview download
     try {
       const result = await invoke<string>('cmd_get_preview', {
@@ -244,20 +226,11 @@ export function MobileMediaPlayer({
           return;
         } else {
           setRawPath(result);
-          // Try reading as blob
-          try {
-            const bytes = await invoke<number[]>('cmd_read_media_file', { path: result });
-            if (bytes && bytes.length > 0) {
-              const mime = getMimeType(file.name);
-              const blob = new Blob([new Uint8Array(bytes)], { type: mime });
-              const blobUrl = URL.createObjectURL(blob);
-              setSrc(blobUrl);
-              setError(null);
-              return;
-            }
-          } catch {
-            // Blob read failed
-          }
+          // Safely stream file from disk via custom asset protocol (zero JS memory allocation)
+          const assetUrl = convertFileSrc(result);
+          setSrc(assetUrl);
+          setError(null);
+          return;
         }
       }
     } catch {
@@ -265,7 +238,7 @@ export function MobileMediaPlayer({
     }
 
     setError('Unable to decode video format in WebView. Please open with external player.');
-  }, [file.id, file.name, activeFolderId]);
+  }, [file.id, file.size, isVideo, activeFolderId]);
 
   // Launch native external app (VLC, MX Player, System Gallery, etc.)
   const handleOpenExternally = useCallback(async () => {
@@ -561,18 +534,6 @@ export function MobileMediaPlayer({
                   const d = videoRef.current.duration;
                   if (Number.isFinite(d) && !isNaN(d) && d > 0) {
                     setDuration(d);
-                  } else if (d === Infinity) {
-                    // Chromium WebM infinite duration fix: probe end to trigger container duration calculation
-                    const vid = videoRef.current;
-                    vid.currentTime = 1e101;
-                    const onSeek = () => {
-                      vid.removeEventListener('timeupdate', onSeek);
-                      vid.currentTime = 0;
-                      if (Number.isFinite(vid.duration) && vid.duration > 0) {
-                        setDuration(vid.duration);
-                      }
-                    };
-                    vid.addEventListener('timeupdate', onSeek, { once: true });
                   }
                 }
               }}

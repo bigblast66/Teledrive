@@ -176,7 +176,7 @@ pub fn build_media_response(
 
         // ciphertext length of the block we're currently filling
         let mut expected_block_len = {
-            let remaining_enc = raw_size - 4 - current_block * ENC_BLOCK;
+            let remaining_enc = raw_size.saturating_sub(4).saturating_sub(current_block * ENC_BLOCK);
             std::cmp::min(ENC_BLOCK, remaining_enc) as usize
         };
 
@@ -227,7 +227,11 @@ pub fn build_media_response(
                         }
 
                         current_block += 1;
-                        let remaining_enc = raw_size - 4 - current_block * ENC_BLOCK;
+                        let remaining_enc = raw_size.saturating_sub(4).saturating_sub(current_block * ENC_BLOCK);
+                        if remaining_enc == 0 {
+                            log::debug!("{} stream reached end of blocks", label);
+                            return;
+                        }
                         expected_block_len = std::cmp::min(ENC_BLOCK, remaining_enc) as usize;
                     }
                 }

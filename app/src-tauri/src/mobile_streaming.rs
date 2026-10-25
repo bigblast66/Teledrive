@@ -258,10 +258,20 @@ async fn handle_stream_client(
     let size = if raw_size > 0 { crypto::plaintext_size(raw_size, BLOCK_SIZE as u64) } else { 0 };
 
     let (start_byte, end_byte, is_range) = if let Some(ref r) = req_range {
-        if let Some((s, e)) = parse_range(r, size) {
-            (s, e, true)
-        } else {
-            (0, if size > 0 { size - 1 } else { 0 }, false)
+        match parse_range(r, size) {
+            Some((s, e)) => (s, e, true),
+            None => {
+                let not_satisfiable = format!(
+                    "HTTP/1.1 416 Range Not Satisfiable\r\n\
+                    Content-Range: bytes */{}\r\n\
+                    Content-Length: 0\r\n\
+                    Access-Control-Allow-Origin: *\r\n\
+                    Connection: close\r\n\r\n",
+                    size
+                );
+                let _ = socket.write_all(not_satisfiable.as_bytes()).await;
+                return Ok(());
+            }
         }
     } else {
         (0, if size > 0 { size - 1 } else { 0 }, false)
@@ -389,8 +399,19 @@ async fn handle_stream_client(
     let mut current_block = start_block;
     let mut plaintext_yielded: u64 = 0;
 
+    let total_blocks = if raw_size > 4 {
+        (raw_size - 4 + ENC_BLOCK - 1) / ENC_BLOCK
+    } else {
+        0
+    };
+
+    if current_block >= total_blocks || content_length == 0 {
+        let _ = socket.flush().await;
+        return Ok(());
+    }
+
     let mut expected_block_len = {
-        let remaining_enc = raw_size - 4 - current_block * ENC_BLOCK;
+        let remaining_enc = raw_size.saturating_sub(4).saturating_sub(current_block * ENC_BLOCK);
         std::cmp::min(ENC_BLOCK, remaining_enc) as usize
     };
 
@@ -411,7 +432,7 @@ async fn handle_stream_client(
 
                 block_buffer.extend_from_slice(&data_slice);
 
-                while block_buffer.len() >= expected_block_len {
+                while expected_block_len > 0 && block_buffer.len() >= expected_block_len {
                     let block_cipher: Vec<u8> = block_buffer.drain(..expected_block_len).collect();
                     let plaintext_block = match crypto::decrypt_block(&dev_key, &nonce_prefix, current_block, &block_cipher) {
                         Ok(p) => p,
@@ -442,7 +463,15 @@ async fn handle_stream_client(
                     }
 
                     current_block += 1;
-                    let remaining_enc = raw_size - 4 - current_block * ENC_BLOCK;
+                    if current_block >= total_blocks {
+                        let _ = socket.flush().await;
+                        return Ok(());
+                    }
+                    let remaining_enc = raw_size.saturating_sub(4).saturating_sub(current_block * ENC_BLOCK);
+                    if remaining_enc == 0 {
+                        let _ = socket.flush().await;
+                        return Ok(());
+                    }
                     expected_block_len = std::cmp::min(ENC_BLOCK, remaining_enc) as usize;
                 }
             }
