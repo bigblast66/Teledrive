@@ -1,4 +1,7 @@
 use std::sync::Arc;
+use std::sync::OnceLock;
+use std::collections::HashMap;
+use tokio::sync::RwLock;
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use grammers_client::types::Media;
@@ -9,12 +12,32 @@ use crate::crypto::{self, BLOCK_SIZE};
 const ENC_BLOCK: u64 = (BLOCK_SIZE + 16) as u64;
 const CDN_ALIGNMENT: u64 = 524288;
 
-/// Parses an HTTP Range header value like "bytes=0-1048575" or "bytes=5000-"
+/// In-memory cache for the 4-byte nonce prefix of encrypted files.
+/// This prevents every HTTP Range request (probing, seeking, scrubbing)
+/// from making an extra 64 KB Telegram MTProto roundtrip.
+fn get_nonce_cache() -> &'static RwLock<HashMap<i32, [u8; 4]>> {
+    static CACHE: OnceLock<RwLock<HashMap<i32, [u8; 4]>>> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// Parses an HTTP Range header value like "bytes=0-1048575", "bytes=5000-", or suffix "bytes=-500000"
 fn parse_range(header_val: &str, total_size: u64) -> Option<(u64, u64)> {
-    if !header_val.starts_with("bytes=") {
+    if total_size == 0 || !header_val.starts_with("bytes=") {
         return None;
     }
-    let s = &header_val["bytes=".len()..];
+    let s = header_val["bytes=".len()..].trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // Handle suffix range: bytes=-500000 (last 500,000 bytes)
+    if s.starts_with('-') {
+        let suffix_len = s[1..].trim().parse::<u64>().ok()?;
+        let start = total_size.saturating_sub(suffix_len);
+        let end = total_size.saturating_sub(1);
+        return if start <= end { Some((start, end)) } else { None };
+    }
+
     let parts: Vec<&str> = s.split('-').collect();
     if parts.is_empty() {
         return None;
@@ -201,13 +224,29 @@ async fn handle_stream_client(
         }
     };
 
-    // Read 4-byte nonce header from file start
-    let mut header_iter = client.iter_download(&media).chunk_size(65536);
-    let nonce_prefix: [u8; 4] = match header_iter.next().await {
-        Ok(Some(chunk)) if chunk.len() >= 4 => chunk[0..4].try_into().unwrap(),
-        _ => {
-            let _ = socket.write_all(b"HTTP/1.1 500 Internal Error\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nFailed to read file header").await;
-            return Ok(());
+    // Read 4-byte nonce header from cache or file start
+    let nonce_prefix: [u8; 4] = {
+        let cached = {
+            let read_guard = get_nonce_cache().read().await;
+            read_guard.get(&message_id).copied()
+        };
+        if let Some(prefix) = cached {
+            prefix
+        } else {
+            let mut header_iter = client.iter_download(&media).chunk_size(65536);
+            let prefix = match header_iter.next().await {
+                Ok(Some(chunk)) if chunk.len() >= 4 => chunk[0..4].try_into().unwrap(),
+                _ => {
+                    let _ = socket.write_all(b"HTTP/1.1 500 Internal Error\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nFailed to read file header").await;
+                    return Ok(());
+                }
+            };
+            let mut write_guard = get_nonce_cache().write().await;
+            if write_guard.len() > 500 {
+                write_guard.clear();
+            }
+            write_guard.insert(message_id, prefix);
+            prefix
         }
     };
 
@@ -229,9 +268,66 @@ async fn handle_stream_client(
     };
 
     let content_length = if size > 0 { end_byte.saturating_sub(start_byte) + 1 } else { 0 };
-    let mime = match &media {
-        Media::Document(d) => d.mime_type().unwrap_or("video/mp4"),
-        _ => "video/mp4",
+
+    // Accurately determine MIME type from filename extension for Android WebView / Chromium
+    let raw_filename = match &media {
+        Media::Document(d) => {
+            let caption = msg.text();
+            if !caption.is_empty() {
+                caption.to_string()
+            } else {
+                d.name().to_string()
+            }
+        }
+        _ => String::new(),
+    };
+    let ext = std::path::Path::new(&raw_filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "flac" => "audio/flac",
+        "ogg" | "opus" => "audio/ogg",
+        "aac" => "audio/aac",
+        _ => match &media {
+            Media::Document(d) => match d.mime_type() {
+                Some("application/octet-stream") | None => "video/mp4",
+                Some(m) => m,
+            },
+            _ => "video/mp4",
+        },
+    };
+
+    // Extract duration from Telegram document attributes if available
+    let mut duration_secs: Option<f64> = None;
+    if let Media::Document(d) = &media {
+        if let Some(grammers_tl_types::enums::Document::Document(doc)) = &d.raw.document {
+            for attr in &doc.attributes {
+                match attr {
+                    grammers_tl_types::enums::DocumentAttribute::Video(v) => {
+                        duration_secs = Some(v.duration);
+                    }
+                    grammers_tl_types::enums::DocumentAttribute::Audio(a) => {
+                        duration_secs = Some(a.duration as f64);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let duration_header = if let Some(dur) = duration_secs {
+        format!("Content-Duration: {}\r\nX-Content-Duration: {}\r\n", dur, dur)
+    } else {
+        String::new()
     };
 
     // Send HTTP response headers
@@ -245,9 +341,9 @@ async fn handle_stream_client(
             Access-Control-Allow-Origin: *\r\n\
             Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n\
             Access-Control-Allow-Headers: Range, Authorization\r\n\
-            Cache-Control: private, max-age=120\r\n\
+            {}Cache-Control: private, max-age=120\r\n\
             Connection: close\r\n\r\n",
-            mime, content_length, start_byte, end_byte, size
+            mime, content_length, start_byte, end_byte, size, duration_header
         )
     } else {
         format!(
@@ -258,9 +354,9 @@ async fn handle_stream_client(
             Access-Control-Allow-Origin: *\r\n\
             Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n\
             Access-Control-Allow-Headers: Range, Authorization\r\n\
-            Cache-Control: private, max-age=120\r\n\
+            {}Cache-Control: private, max-age=120\r\n\
             Connection: close\r\n\r\n",
-            mime, size
+            mime, size, duration_header
         )
     };
     socket.write_all(resp_headers.as_bytes()).await?;
@@ -275,7 +371,7 @@ async fn handle_stream_client(
     let offset_in_first_block = (start_byte % BLOCK_SIZE as u64) as usize;
     let enc_start_offset = 4 + start_block * ENC_BLOCK;
 
-    let mut download_iter = client.iter_download(&media);
+    let mut download_iter = client.iter_download(&media).chunk_size(CDN_ALIGNMENT as i32);
     let mut bytes_to_skip: usize = 0;
 
     if enc_start_offset > 0 {

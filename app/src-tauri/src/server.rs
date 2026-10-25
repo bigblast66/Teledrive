@@ -58,10 +58,22 @@ struct StreamQuery {
 }
 
 pub fn parse_range_header(header_val: &str, total_size: u64) -> Option<(u64, u64)> {
-    if !header_val.starts_with("bytes=") {
+    if total_size == 0 || !header_val.starts_with("bytes=") {
         return None;
     }
-    let s = &header_val["bytes=".len()..];
+    let s = header_val["bytes=".len()..].trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // Handle suffix range: bytes=-500000 (last 500,000 bytes)
+    if s.starts_with('-') {
+        let suffix_len = s[1..].trim().parse::<u64>().ok()?;
+        let start = total_size.saturating_sub(suffix_len);
+        let end = total_size.saturating_sub(1);
+        return if start <= end { Some((start, end)) } else { None };
+    }
+
     let parts: Vec<&str> = s.split('-').collect();
     if parts.is_empty() {
         return None;
@@ -363,7 +375,28 @@ async fn stream_media(
 
 fn mime_type_from_media(media: &Media) -> String {
     match media {
-        Media::Document(d) => d.mime_type().unwrap_or("application/octet-stream").to_string(),
+        Media::Document(d) => {
+            let name = d.name();
+            let ext = std::path::Path::new(&name)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            match ext.as_str() {
+                "mp4" | "m4v" => "video/mp4".to_string(),
+                "webm" => "video/webm".to_string(),
+                "mov" => "video/quicktime".to_string(),
+                "mkv" => "video/x-matroska".to_string(),
+                "mp3" => "audio/mpeg".to_string(),
+                "m4a" => "audio/mp4".to_string(),
+                "wav" => "audio/wav".to_string(),
+                "flac" => "audio/flac".to_string(),
+                "ogg" | "opus" => "audio/ogg".to_string(),
+                "aac" => "audio/aac".to_string(),
+                _ => d.mime_type().unwrap_or("application/octet-stream").to_string(),
+            }
+        }
+        Media::Photo(_) => "image/jpeg".to_string(),
         _ => "application/octet-stream".to_string(),
     }
 }

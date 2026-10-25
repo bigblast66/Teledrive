@@ -703,6 +703,7 @@ pub fn run() {
             commands::cmd_get_thumbnail,
             commands::cmd_save_thumbnail,
             commands::cmd_get_stream_info,
+            commands::cmd_get_media_info,
             commands::cmd_cancel_transfer,
             commands::cmd_auth_qr_login,
             commands::cmd_auth_qr_poll,

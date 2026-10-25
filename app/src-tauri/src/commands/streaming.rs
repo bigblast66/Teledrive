@@ -1,4 +1,7 @@
 use tauri::State;
+use crate::commands::TelegramState;
+use crate::commands::utils::resolve_peer;
+use grammers_client::types::Media;
 
 /// Holds the per-session streaming config (token + port)
 pub struct StreamConfig {
@@ -11,6 +14,13 @@ pub struct StreamConfig {
 pub struct StreamInfo {
     pub token: String,
     pub base_url: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct MediaInfo {
+    pub duration_secs: Option<f64>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
 }
 
 /// Returns the streaming server's session token and base URL to the frontend.
@@ -32,4 +42,45 @@ pub fn cmd_get_stream_info(config: State<'_, StreamConfig>) -> StreamInfo {
         token: config.token.clone(),
         base_url: format!("http://{}:{}", host, config.port),
     }
+}
+
+/// Returns media duration, width, height directly from Telegram document attributes.
+#[tauri::command]
+pub async fn cmd_get_media_info(
+    message_id: i32,
+    folder_id: Option<i64>,
+    state: State<'_, TelegramState>,
+) -> Result<MediaInfo, String> {
+    let client_opt = { state.client.lock().await.clone() };
+    let client = client_opt.ok_or_else(|| "Client not connected".to_string())?;
+    let peer = resolve_peer(&client, folder_id, &state.peer_cache).await?;
+    let messages = client.get_messages_by_id(&peer, &[message_id]).await.map_err(|e| e.to_string())?;
+    let msg = messages.into_iter().flatten().next().ok_or_else(|| "Message not found".to_string())?;
+    let media = msg.media().ok_or_else(|| "No media in message".to_string())?;
+
+    let mut info = MediaInfo {
+        duration_secs: None,
+        width: None,
+        height: None,
+    };
+
+    if let Media::Document(d) = media {
+        if let Some(grammers_tl_types::enums::Document::Document(doc)) = &d.raw.document {
+            for attr in &doc.attributes {
+                match attr {
+                    grammers_tl_types::enums::DocumentAttribute::Video(v) => {
+                        info.duration_secs = Some(v.duration);
+                        info.width = Some(v.w);
+                        info.height = Some(v.h);
+                    }
+                    grammers_tl_types::enums::DocumentAttribute::Audio(a) => {
+                        info.duration_secs = Some(a.duration as f64);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(info)
 }
